@@ -977,33 +977,50 @@ export default function ClientDetailPage() {
                 </p>
               ) : (
                 <div className="space-y-1">
-                  {timelineEntries.slice(0, 20).map((entry) => (
-                    <div
-                      key={`${entry.type}-${entry.id}`}
-                      className="bg-card rounded-lg px-4 py-3 flex items-start gap-3"
-                    >
-                      <div className="flex-shrink-0 mt-0.5">
-                        {entry.type === 'transcript' ? (
-                          <FileText className="w-4 h-4 text-primary" />
-                        ) : (
-                          <Check className="w-4 h-4 text-success" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium leading-tight truncate">
-                          {entry.title}
-                        </p>
-                        {entry.description && (
-                          <p className="text-xs text-muted mt-1 line-clamp-2">
-                            {entry.description}
+                  {timelineEntries.slice(0, 20).map((entry) => {
+                    const isTranscript = entry.type === 'transcript';
+                    const content = (
+                      <>
+                        <div className="flex-shrink-0 mt-0.5">
+                          {isTranscript ? (
+                            <FileText className="w-4 h-4 text-primary" />
+                          ) : (
+                            <Check className="w-4 h-4 text-success" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium leading-tight truncate">
+                            {entry.title}
                           </p>
-                        )}
+                          {entry.description && (
+                            <p className="text-xs text-muted mt-1 line-clamp-2">
+                              {entry.description}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted flex-shrink-0">
+                          {format(new Date(entry.date), 'MMM d')}
+                        </span>
+                      </>
+                    );
+
+                    return isTranscript ? (
+                      <Link
+                        key={`${entry.type}-${entry.id}`}
+                        href={`/transcripts/${entry.id}`}
+                        className="bg-card rounded-lg px-4 py-3 flex items-start gap-3 hover:bg-card-hover transition-all border border-transparent hover:border-border"
+                      >
+                        {content}
+                      </Link>
+                    ) : (
+                      <div
+                        key={`${entry.type}-${entry.id}`}
+                        className="bg-card rounded-lg px-4 py-3 flex items-start gap-3"
+                      >
+                        {content}
                       </div>
-                      <span className="text-xs text-muted flex-shrink-0">
-                        {format(new Date(entry.date), 'MMM d')}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>
