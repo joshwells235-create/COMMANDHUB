@@ -125,6 +125,8 @@ CREATE TABLE transcripts (
   client_insights JSONB,
   session_arc TEXT,
   notable_quotes JSONB,
+  language_leaks_observed JSONB,
+  recommended_focus_next_session TEXT,
   ai_extraction JSONB,
   review_status TEXT DEFAULT 'pending',
   is_processed BOOLEAN DEFAULT false,
@@ -149,7 +151,7 @@ CREATE TABLE transcript_chunks (
 CREATE TABLE josh_profile (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_type TEXT NOT NULL,
-  content JSONB NOT NULL,
+  profile_data JSONB NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -189,6 +191,13 @@ CREATE INDEX idx_chunks_content_trgm ON transcript_chunks USING gin (content gin
 CREATE INDEX idx_chunks_content_fts ON transcript_chunks USING gin (to_tsvector('english', content));
 CREATE INDEX idx_chunks_org ON transcript_chunks(org_id);
 CREATE INDEX idx_activity_commitment ON commitment_activity(commitment_id);
+CREATE INDEX idx_transcripts_org ON transcripts(org_id);
+CREATE INDEX idx_transcripts_processed ON transcripts(is_processed) WHERE is_processed = true;
+CREATE INDEX idx_transcripts_category ON transcripts(category);
+CREATE INDEX idx_transcripts_source ON transcripts(source);
+CREATE INDEX idx_transcripts_date ON transcripts(transcript_date DESC);
+CREATE INDEX idx_transcripts_language_leaks ON transcripts USING gin (language_leaks_observed) WHERE language_leaks_observed IS NOT NULL;
+CREATE INDEX idx_commitments_category ON commitments(category);
 
 -- ============================================================
 -- PRIORITY SCORE FUNCTION
