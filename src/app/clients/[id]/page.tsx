@@ -72,10 +72,13 @@ export default function ClientDetailPage() {
   const [searching, setSearching] = useState(false);
   const [briefing, setBriefing] = useState<string | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
+  const [trajectoryData, setTrajectoryData] = useState<Record<string, unknown> | null>(null);
+  const [trajectoryLoading, setTrajectoryLoading] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     commitments: true,
     timeline: true,
     brief: true,
+    trajectory: false,
     search: false,
     contacts: true,
   });
@@ -119,6 +122,22 @@ export default function ClientDetailPage() {
       console.error('Search failed:', err);
     } finally {
       setSearching(false);
+    }
+  }
+
+  async function generateTrajectory() {
+    setTrajectoryLoading(true);
+    try {
+      const res = await fetch(`/api/ai/longitudinal?org_id=${orgId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTrajectoryData(data);
+        setExpandedSections((prev) => ({ ...prev, trajectory: true }));
+      }
+    } catch (err) {
+      console.error('Trajectory analysis failed:', err);
+    } finally {
+      setTrajectoryLoading(false);
     }
   }
 
@@ -278,6 +297,33 @@ export default function ClientDetailPage() {
           {organization.notes && (
             <p className="text-sm text-muted mt-3">{organization.notes}</p>
           )}
+          {(() => {
+            const sessionComparison = latestTranscript?.ai_extraction?.session_comparison as
+              | { momentum?: { direction?: string } }
+              | undefined;
+            const direction = sessionComparison?.momentum?.direction;
+            if (!direction) return null;
+            const colors: Record<string, string> = {
+              accelerating: 'bg-success/20 text-success',
+              steady: 'bg-primary/20 text-primary',
+              stalling: 'bg-warning/20 text-warning',
+              regressing: 'bg-danger/20 text-danger',
+            };
+            return (
+              <div className="flex items-center gap-2 mt-3">
+                <TrendingUp className="w-4 h-4 text-muted" />
+                <span
+                  className={cn(
+                    'text-xs px-2 py-0.5 rounded-full font-medium capitalize',
+                    colors[direction] || 'bg-muted/20 text-muted'
+                  )}
+                >
+                  {direction}
+                </span>
+                <span className="text-xs text-muted">momentum</span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Generate Briefing Button */}
@@ -578,6 +624,198 @@ export default function ClientDetailPage() {
             )}
           </section>
         )}
+
+        {/* Session Trajectory */}
+        <section>
+          <button
+            onClick={() => toggleSection('trajectory')}
+            className="w-full flex items-center justify-between mb-3"
+          >
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+              Session Trajectory
+            </h2>
+            {expandedSections.trajectory ? (
+              <ChevronDown className="w-4 h-4 text-muted" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-muted" />
+            )}
+          </button>
+
+          {expandedSections.trajectory && (
+            <div className="space-y-3">
+              {!trajectoryData && (
+                <button
+                  onClick={generateTrajectory}
+                  disabled={trajectoryLoading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary/20 text-primary rounded-lg font-medium text-sm hover:bg-primary/30 transition-colors disabled:opacity-50"
+                >
+                  {trajectoryLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <TrendingUp className="w-4 h-4" />
+                  )}
+                  {trajectoryLoading
+                    ? 'Generating Trajectory Analysis...'
+                    : 'Generate Trajectory Analysis'}
+                </button>
+              )}
+
+              {trajectoryData && (() => {
+                const momentum = trajectoryData.momentum as { direction?: string; reasoning?: string } | undefined;
+                const growthTrajectory = trajectoryData.growth_trajectory as string[] | undefined;
+                const stalledAreas = trajectoryData.stalled_areas as Array<{ topic?: string; suggested_approach?: string }> | undefined;
+                const droppedThreads = trajectoryData.dropped_threads as Array<{ item?: string; significance?: string }> | undefined;
+                const commitmentFollowThrough = trajectoryData.commitment_follow_through as Array<{ commitment?: string; status?: string }> | undefined;
+                const recommendedInterventions = trajectoryData.recommended_interventions as string[] | undefined;
+
+                const momentumColors: Record<string, string> = {
+                  accelerating: 'bg-success/20 text-success',
+                  steady: 'bg-primary/20 text-primary',
+                  stalling: 'bg-warning/20 text-warning',
+                  regressing: 'bg-danger/20 text-danger',
+                };
+
+                const significanceColors: Record<string, string> = {
+                  high: 'bg-danger/20 text-danger',
+                  medium: 'bg-warning/20 text-warning',
+                  low: 'bg-muted/20 text-muted',
+                };
+
+                return (
+                  <div className="bg-card rounded-xl border border-border p-5 space-y-4">
+                    {/* Momentum Indicator */}
+                    {momentum && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                          <TrendingUp className="w-3.5 h-3.5" /> Momentum
+                        </h4>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span
+                            className={cn(
+                              'text-xs px-2 py-0.5 rounded-full font-medium capitalize',
+                              momentumColors[momentum.direction || ''] || 'bg-muted/20 text-muted'
+                            )}
+                          >
+                            {momentum.direction || 'unknown'}
+                          </span>
+                        </div>
+                        {momentum.reasoning && (
+                          <p className="text-sm text-foreground/80 leading-relaxed">
+                            {momentum.reasoning}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Growth Trajectory */}
+                    {growthTrajectory && growthTrajectory.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-success uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                          <Lightbulb className="w-3.5 h-3.5" /> Growth Trajectory
+                        </h4>
+                        <ul className="space-y-1">
+                          {growthTrajectory.map((item, i) => (
+                            <li key={i} className="text-sm text-foreground flex items-start gap-2">
+                              <span className="text-success mt-1 flex-shrink-0">&#8226;</span>
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Stalled Areas */}
+                    {stalledAreas && stalledAreas.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-warning uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5" /> Stalled Areas
+                        </h4>
+                        <ul className="space-y-2">
+                          {stalledAreas.map((area, i) => (
+                            <li key={i} className="text-sm">
+                              <span className="text-foreground flex items-start gap-2">
+                                <span className="text-warning mt-1 flex-shrink-0">&#8226;</span>
+                                <span>
+                                  <span className="font-medium">{area.topic}</span>
+                                  {area.suggested_approach && (
+                                    <span className="text-muted"> &mdash; {area.suggested_approach}</span>
+                                  )}
+                                </span>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Dropped Threads */}
+                    {droppedThreads && droppedThreads.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-danger uppercase tracking-wider mb-1.5">
+                          Dropped Threads
+                        </h4>
+                        <ul className="space-y-1.5">
+                          {droppedThreads.map((thread, i) => (
+                            <li key={i} className="text-sm text-foreground flex items-center gap-2">
+                              <span>{thread.item}</span>
+                              {thread.significance && (
+                                <span
+                                  className={cn(
+                                    'text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize',
+                                    significanceColors[thread.significance] || 'bg-muted/20 text-muted'
+                                  )}
+                                >
+                                  {thread.significance}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Commitment Follow-Through */}
+                    {commitmentFollowThrough && commitmentFollowThrough.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> Commitment Follow-Through
+                        </h4>
+                        <ul className="space-y-1">
+                          {commitmentFollowThrough.map((item, i) => (
+                            <li key={i} className="text-sm text-foreground flex items-center gap-2">
+                              {item.status === 'followed_up' || item.status === 'followed-up' ? (
+                                <Check className="w-3.5 h-3.5 text-success flex-shrink-0" />
+                              ) : (
+                                <X className="w-3.5 h-3.5 text-danger flex-shrink-0" />
+                              )}
+                              <span>{item.commitment}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Recommended Interventions */}
+                    {recommendedInterventions && recommendedInterventions.length > 0 && (
+                      <div className="bg-primary/10 rounded-lg p-3">
+                        <h4 className="text-xs font-semibold text-primary uppercase tracking-wider mb-1.5">
+                          Recommended Interventions
+                        </h4>
+                        <ol className="space-y-1 list-decimal list-inside">
+                          {recommendedInterventions.map((intervention, i) => (
+                            <li key={i} className="text-sm text-foreground">
+                              {intervention}
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </section>
 
         {/* Relationship Timeline */}
         <section>

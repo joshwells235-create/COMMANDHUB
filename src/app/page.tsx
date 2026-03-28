@@ -16,6 +16,7 @@ import { TodayEvents } from '@/components/calendar/today-events';
 import { NeedsReplySection } from '@/components/review/needs-reply-section';
 import { CommandHubChat } from '@/components/chat/command-hub-chat';
 import { ClientPulse } from '@/components/dashboard/client-pulse';
+import { PracticeIntelligence } from '@/components/dashboard/practice-intelligence';
 import { isToday, isThisWeek } from 'date-fns';
 
 export default function FocusView() {
@@ -209,6 +210,9 @@ export default function FocusView() {
 
             {/* Client Pulse */}
             <ClientPulse />
+
+            {/* Practice Intelligence */}
+            <PracticeIntelligence />
 
             {/* Waiting On */}
             <WaitingOnList

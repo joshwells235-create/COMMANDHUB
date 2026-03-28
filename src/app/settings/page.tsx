@@ -12,6 +12,9 @@ import {
   RefreshCw,
   Check,
   AlertTriangle,
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -20,6 +23,56 @@ interface VoiceProfile {
   tone?: string;
   signature_phrases?: string[];
   frameworks_used?: string[];
+  updated_at: string;
+}
+
+interface MethodologyFramework {
+  framework_name: string;
+  description: string;
+  how_josh_deploys_it?: string;
+  sessions_appeared?: string[];
+  clients_used_with?: string[];
+}
+
+interface SignatureQuestion {
+  question_pattern: string;
+  variants_seen?: string[];
+  what_it_unlocks: string;
+  frequency?: string;
+}
+
+interface EngagementSequence {
+  sequence_name: string;
+  steps?: string[];
+  description: string;
+  sessions_observed?: string[];
+}
+
+interface InterventionPattern {
+  situation: string;
+  josh_response_pattern: string;
+  example_instances?: string[];
+  effectiveness_notes?: string;
+}
+
+interface MetaphorAnalogy {
+  metaphor: string;
+  description: string;
+  when_deployed?: string;
+  sessions_used?: string[];
+}
+
+interface Methodology {
+  named_frameworks?: MethodologyFramework[];
+  signature_questions?: SignatureQuestion[];
+  engagement_sequences?: EngagementSequence[];
+  coaching_sequences?: EngagementSequence[];
+  intervention_patterns?: InterventionPattern[];
+  metaphors_and_analogies?: MetaphorAnalogy[];
+}
+
+interface MethodologyData {
+  methodology: Methodology;
   updated_at: string;
 }
 
@@ -36,6 +89,13 @@ export default function SettingsPage() {
   const [voiceGenerating, setVoiceGenerating] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
+  // Engagement Methodology state
+  const [methodologyData, setMethodologyData] = useState<MethodologyData | null>(null);
+  const [methodologyLoading, setMethodologyLoading] = useState(false);
+  const [methodologyGenerating, setMethodologyGenerating] = useState(false);
+  const [methodologyError, setMethodologyError] = useState<string | null>(null);
+  const [methodologyExpanded, setMethodologyExpanded] = useState<Record<string, boolean>>({});
+
   // Priority Learning state
   const [priorityInsights, setPriorityInsights] = useState<PriorityInsights | null>(null);
   const [priorityLoading, setPriorityLoading] = useState(false);
@@ -49,6 +109,7 @@ export default function SettingsPage() {
   // Fetch voice profile on mount
   useEffect(() => {
     fetchVoiceProfile();
+    fetchMethodology();
     fetchPriorityInsights();
     checkMicrosoftConnection();
   }, []);
@@ -88,6 +149,53 @@ export default function SettingsPage() {
     } finally {
       setVoiceGenerating(false);
     }
+  }
+
+  async function fetchMethodology() {
+    setMethodologyLoading(true);
+    try {
+      const res = await fetch('/api/ai/methodology');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.methodology) {
+          setMethodologyData({
+            methodology: data.methodology,
+            updated_at: data.updated_at,
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch methodology:', err);
+    } finally {
+      setMethodologyLoading(false);
+    }
+  }
+
+  async function generateMethodology() {
+    setMethodologyGenerating(true);
+    setMethodologyError(null);
+    try {
+      const res = await fetch('/api/ai/methodology', {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        throw new Error('Failed to extract methodology');
+      }
+      const data = await res.json();
+      setMethodologyData({
+        methodology: data.methodology,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('Methodology extraction failed:', err);
+      setMethodologyError('Failed to extract engagement methodology. Please try again.');
+    } finally {
+      setMethodologyGenerating(false);
+    }
+  }
+
+  function toggleMethodologySection(key: string) {
+    setMethodologyExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   async function fetchPriorityInsights() {
@@ -258,6 +366,292 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Engagement Methodology Section */}
+        <section className="bg-card rounded-lg border border-border/50 overflow-hidden">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-primary" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+              Engagement Methodology
+            </h2>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            {/* Status */}
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted">
+                {methodologyLoading ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Loading...
+                  </span>
+                ) : methodologyData ? (
+                  <span>
+                    Last updated:{' '}
+                    <span className="text-foreground font-medium">
+                      {format(new Date(methodologyData.updated_at), 'MMM d, yyyy h:mma')}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-warning">Not generated yet</span>
+                )}
+              </div>
+            </div>
+
+            {/* Generate Button */}
+            <button
+              onClick={generateMethodology}
+              disabled={methodologyGenerating}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary/20 text-primary rounded-lg font-medium text-sm hover:bg-primary/30 transition-colors disabled:opacity-50"
+            >
+              {methodologyGenerating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Extracting Methodology...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  {methodologyData ? 'Re-extract Methodology' : 'Extract Methodology'}
+                </>
+              )}
+            </button>
+
+            {methodologyError && (
+              <p className="text-sm text-danger flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {methodologyError}
+              </p>
+            )}
+
+            {/* Methodology Details */}
+            {methodologyData?.methodology && (
+              <div className="space-y-3">
+                {/* Named Frameworks */}
+                {methodologyData.methodology.named_frameworks &&
+                  methodologyData.methodology.named_frameworks.length > 0 && (
+                    <div className="bg-background rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleMethodologySection('frameworks')}
+                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-primary/5 transition-colors"
+                      >
+                        <h4 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                          Named Frameworks ({methodologyData.methodology.named_frameworks.length})
+                        </h4>
+                        {methodologyExpanded.frameworks ? (
+                          <ChevronDown className="w-4 h-4 text-muted" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-muted" />
+                        )}
+                      </button>
+                      {methodologyExpanded.frameworks && (
+                        <div className="px-4 pb-4 space-y-3">
+                          {methodologyData.methodology.named_frameworks.map((fw, i) => (
+                            <div
+                              key={i}
+                              className="bg-card rounded-lg border border-border/30 p-3 space-y-2"
+                            >
+                              <p className="text-sm font-medium text-foreground">
+                                {fw.framework_name}
+                              </p>
+                              <p className="text-xs text-muted">{fw.description}</p>
+                              {fw.clients_used_with && fw.clients_used_with.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {fw.clients_used_with.map((client, j) => (
+                                    <span
+                                      key={j}
+                                      className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary"
+                                    >
+                                      {client}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* Signature Questions */}
+                {methodologyData.methodology.signature_questions &&
+                  methodologyData.methodology.signature_questions.length > 0 && (
+                    <div className="bg-background rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleMethodologySection('questions')}
+                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-primary/5 transition-colors"
+                      >
+                        <h4 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                          Signature Questions ({methodologyData.methodology.signature_questions.length})
+                        </h4>
+                        {methodologyExpanded.questions ? (
+                          <ChevronDown className="w-4 h-4 text-muted" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-muted" />
+                        )}
+                      </button>
+                      {methodologyExpanded.questions && (
+                        <div className="px-4 pb-4 space-y-3">
+                          {methodologyData.methodology.signature_questions.map((q, i) => (
+                            <div
+                              key={i}
+                              className="bg-card rounded-lg border border-border/30 p-3 space-y-1.5"
+                            >
+                              <p className="text-sm font-medium text-foreground italic">
+                                &ldquo;{q.question_pattern}&rdquo;
+                              </p>
+                              <p className="text-xs text-muted">
+                                <span className="font-semibold">Unlocks:</span> {q.what_it_unlocks}
+                              </p>
+                              {q.frequency && (
+                                <p className="text-xs text-muted">
+                                  <span className="font-semibold">Frequency:</span> {q.frequency}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* Engagement Sequences */}
+                {(() => {
+                  const sequences =
+                    methodologyData.methodology.engagement_sequences ||
+                    methodologyData.methodology.coaching_sequences;
+                  if (!sequences || sequences.length === 0) return null;
+                  return (
+                    <div className="bg-background rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleMethodologySection('sequences')}
+                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-primary/5 transition-colors"
+                      >
+                        <h4 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                          Engagement Sequences ({sequences.length})
+                        </h4>
+                        {methodologyExpanded.sequences ? (
+                          <ChevronDown className="w-4 h-4 text-muted" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-muted" />
+                        )}
+                      </button>
+                      {methodologyExpanded.sequences && (
+                        <div className="px-4 pb-4 space-y-3">
+                          {sequences.map((seq, i) => (
+                            <div
+                              key={i}
+                              className="bg-card rounded-lg border border-border/30 p-3 space-y-2"
+                            >
+                              <p className="text-sm font-medium text-foreground">
+                                {seq.sequence_name}
+                              </p>
+                              <p className="text-xs text-muted">{seq.description}</p>
+                              {seq.steps && seq.steps.length > 0 && (
+                                <ol className="list-decimal list-inside space-y-0.5">
+                                  {seq.steps.map((step, j) => (
+                                    <li key={j} className="text-xs text-foreground">
+                                      {step}
+                                    </li>
+                                  ))}
+                                </ol>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Intervention Patterns */}
+                {methodologyData.methodology.intervention_patterns &&
+                  methodologyData.methodology.intervention_patterns.length > 0 && (
+                    <div className="bg-background rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleMethodologySection('interventions')}
+                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-primary/5 transition-colors"
+                      >
+                        <h4 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                          Intervention Patterns ({methodologyData.methodology.intervention_patterns.length})
+                        </h4>
+                        {methodologyExpanded.interventions ? (
+                          <ChevronDown className="w-4 h-4 text-muted" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-muted" />
+                        )}
+                      </button>
+                      {methodologyExpanded.interventions && (
+                        <div className="px-4 pb-4 space-y-3">
+                          {methodologyData.methodology.intervention_patterns.map((ip, i) => (
+                            <div
+                              key={i}
+                              className="bg-card rounded-lg border border-border/30 p-3 space-y-1.5"
+                            >
+                              <p className="text-sm font-medium text-foreground">
+                                {ip.situation}
+                              </p>
+                              <p className="text-xs text-muted">
+                                <span className="font-semibold">Response:</span>{' '}
+                                {ip.josh_response_pattern}
+                              </p>
+                              {ip.effectiveness_notes && (
+                                <p className="text-xs text-muted">
+                                  <span className="font-semibold">Effectiveness:</span>{' '}
+                                  {ip.effectiveness_notes}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* Metaphors & Analogies */}
+                {methodologyData.methodology.metaphors_and_analogies &&
+                  methodologyData.methodology.metaphors_and_analogies.length > 0 && (
+                    <div className="bg-background rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleMethodologySection('metaphors')}
+                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-primary/5 transition-colors"
+                      >
+                        <h4 className="text-xs font-semibold text-muted uppercase tracking-wider">
+                          Metaphors & Analogies ({methodologyData.methodology.metaphors_and_analogies.length})
+                        </h4>
+                        {methodologyExpanded.metaphors ? (
+                          <ChevronDown className="w-4 h-4 text-muted" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-muted" />
+                        )}
+                      </button>
+                      {methodologyExpanded.metaphors && (
+                        <div className="px-4 pb-4 space-y-3">
+                          {methodologyData.methodology.metaphors_and_analogies.map((m, i) => (
+                            <div
+                              key={i}
+                              className="bg-card rounded-lg border border-border/30 p-3 space-y-1.5"
+                            >
+                              <p className="text-sm font-medium text-foreground">
+                                {m.metaphor}
+                              </p>
+                              <p className="text-xs text-muted">{m.description}</p>
+                              {m.when_deployed && (
+                                <p className="text-xs text-muted">
+                                  <span className="font-semibold">Used when:</span>{' '}
+                                  {m.when_deployed}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
               </div>
             )}
           </div>
