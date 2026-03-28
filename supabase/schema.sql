@@ -289,3 +289,47 @@ BEGIN
     AND snoozed_until <= now();
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- RAG SEARCH: Vector similarity search across transcript chunks
+-- ============================================================
+CREATE OR REPLACE FUNCTION search_transcript_chunks(
+  query_embedding vector(1536),
+  match_threshold float DEFAULT 0.5,
+  match_count int DEFAULT 10,
+  filter_org_id uuid DEFAULT NULL
+)
+RETURNS TABLE (
+  id uuid,
+  content text,
+  metadata jsonb,
+  similarity float,
+  transcript_id uuid,
+  transcript_title text,
+  transcript_date date,
+  transcript_type text,
+  org_name text
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    tc.id,
+    tc.content,
+    tc.metadata,
+    (1 - (tc.embedding <=> query_embedding))::float as similarity,
+    t.id as transcript_id,
+    t.title as transcript_title,
+    t.transcript_date,
+    t.transcript_type,
+    o.name as org_name
+  FROM transcript_chunks tc
+  JOIN transcripts t ON tc.transcript_id = t.id
+  LEFT JOIN organizations o ON tc.org_id = o.id
+  WHERE (filter_org_id IS NULL OR tc.org_id = filter_org_id)
+    AND 1 - (tc.embedding <=> query_embedding) > match_threshold
+  ORDER BY tc.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;

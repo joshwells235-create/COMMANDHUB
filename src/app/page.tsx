@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Zap, Inbox, Mail } from 'lucide-react';
+import { Plus, Zap, Inbox, Users, FileText } from 'lucide-react';
+import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
 import { useCalendarEvents } from '@/lib/hooks/use-calendar';
@@ -121,6 +122,24 @@ export default function FocusView() {
           commitments={waitingOn}
           onReceived={completeCommitment}
         />
+
+        {/* Quick Links */}
+        <div className="grid grid-cols-2 gap-2 pt-2">
+          <Link
+            href="/clients"
+            className="flex items-center gap-2 bg-card rounded-lg px-4 py-3 hover:bg-card-hover transition-colors"
+          >
+            <Users className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium">Clients</span>
+          </Link>
+          <Link
+            href="/transcripts"
+            className="flex items-center gap-2 bg-card rounded-lg px-4 py-3 hover:bg-card-hover transition-colors"
+          >
+            <FileText className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium">Transcripts</span>
+          </Link>
+        </div>
       </main>
 
       {/* Quick Add FAB (mobile) + Modal */}
