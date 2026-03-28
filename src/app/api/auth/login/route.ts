@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     headers.append(
       'Set-Cookie',
-      `ch_session=${secret}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}${isProduction ? '; Secure' : ''}`
+      `ch_session=${secret}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 24 * 365}${isProduction ? '; Secure' : ''}`
     );
 
     return new Response(response.body, {
