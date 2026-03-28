@@ -11,8 +11,6 @@ const SCOPES = [
   'Mail.ReadWrite',
   'Mail.Send',
   'Contacts.Read',
-  'Tasks.ReadWrite',
-  'OnlineMeetings.Read',
   'Files.Read',
   'People.Read',
   'User.Read',
