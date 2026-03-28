@@ -18,7 +18,6 @@ export async function GET(request: Request) {
     const todayStr = today.toISOString().split('T')[0];
     const tomorrowStr = new Date(today.getTime() + 86400000).toISOString().split('T')[0];
     const twentyFourHoursAgo = new Date(today.getTime() - 86400000).toISOString();
-    const fourteenDaysAgo = new Date(today.getTime() - 14 * 86400000).toISOString();
 
     // 1. Fetch today's calendar events
     const { data: events } = await supabase
@@ -169,6 +168,30 @@ export async function GET(request: Request) {
       return b.days_since_contact - a.days_since_contact;
     });
 
+    // 9. Fetch recent commitments for meeting-related orgs (for meeting prep context)
+    const meetingOrgIds = (events || []).map((e) => e.org_id).filter(Boolean) as string[];
+    const uniqueMeetingOrgIds = [...new Set(meetingOrgIds)];
+
+    const meetingPrepData: Record<string, { commitments: string[]; contactInfo: { days: number; lastType: string } }> = {};
+    for (const orgId of uniqueMeetingOrgIds) {
+      const { data: orgCommitments } = await supabase
+        .from('commitments')
+        .select('id, title, commitment_type, status, due_date, owner')
+        .eq('org_id', orgId)
+        .in('status', ['pending', 'in_progress', 'waiting'])
+        .order('priority_score', { ascending: false })
+        .limit(5);
+
+      const contact = orgContactMap.get(orgId);
+      meetingPrepData[orgId] = {
+        commitments: (orgCommitments || []).map((c) => {
+          const overdue = c.due_date && new Date(c.due_date) < today ? ' (OVERDUE)' : '';
+          return `[${c.commitment_type}] ${c.title} - ${c.status}${overdue} (owner: ${c.owner})`;
+        }),
+        contactInfo: contact || { days: 0, lastType: 'unknown' },
+      };
+    }
+
     // --- Format all data as text for Claude ---
 
     const formatOrg = (c: { organizations?: unknown }) => {
@@ -181,7 +204,10 @@ export async function GET(request: Request) {
       const analysis = e.ai_analysis as { prep_notes?: string; event_type?: string } | null;
       const start = new Date(e.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
       const end = new Date(e.end_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
-      return `- ${start}-${end}: ${e.subject || 'No subject'}${org ? ` (${org.name})` : ''}${e.location ? ` @ ${e.location}` : ''}${analysis?.prep_notes ? ` | Prep: ${analysis.prep_notes}` : ''}${analysis?.event_type ? ` | Type: ${analysis.event_type}` : ''}`;
+      const prepContext = org && e.org_id && meetingPrepData[e.org_id]
+        ? `\n  Open items for ${org.name}: ${meetingPrepData[e.org_id].commitments.join('; ') || 'None'}\n  Last contact: ${meetingPrepData[e.org_id].contactInfo.days} days ago via ${meetingPrepData[e.org_id].contactInfo.lastType}`
+        : '';
+      return `- ${start}-${end}: ${e.subject || 'No subject'}${org ? ` (${org.name})` : ''}${e.location ? ` @ ${e.location}` : ''}${analysis?.prep_notes ? ` | Prep: ${analysis.prep_notes}` : ''}${analysis?.event_type ? ` | Type: ${analysis.event_type}` : ''}${prepContext}`;
     }).join('\n') || 'No events scheduled today.';
 
     const overdueText = (overdueCommitments || []).map((c) => {
@@ -240,7 +266,7 @@ export async function GET(request: Request) {
       messages: [
         {
           role: 'user',
-          content: `You are Josh Wells' chief of staff. Generate his morning briefing email for ${todayStr}. This is the first thing he reads at 7am over coffee on his phone. Make it genuinely useful, crisp, and actionable.
+          content: `You are Josh Wells' chief of staff. Generate his morning briefing email for ${todayStr} (${today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}). This is the first thing he reads at 7am over coffee on his phone. Make it genuinely useful, crisp, and actionable. Think of it as a daily digest from someone who deeply understands his practice.
 
 TODAY'S SCHEDULE (${(events || []).length} events):
 ${eventsText}
@@ -263,46 +289,52 @@ ${prioritiesText}
 RELATIONSHIP ALERTS (14+ days no contact):
 ${alertsText}
 
-EMAILS NEEDING REPLY:
+EMAILS NEEDING REPLY (${needsReply.length}):
 ${replyText}
 
 CLIENT ATTENTION DATA (all active orgs):
 ${attentionDataText}
 
 Generate the email as complete HTML with inline CSS. The design MUST follow these rules:
-- Dark theme: background #0f172a, card backgrounds #1e293b, text #e2e8f0, accent blue #3b82f6, accent green #22c55e for wins, accent amber #f59e0b for warnings, accent red #ef4444 for urgent/overdue
-- Mobile-first: max-width 600px, centered, good padding
+- Dark theme: background #0f172a, card backgrounds #1e293b, text #e2e8f0, muted text #94a3b8, accent blue #3b82f6, accent green #22c55e for wins, accent amber #f59e0b for warnings, accent red #ef4444 for urgent/overdue
+- Mobile-first: max-width 600px, centered, padding 16px on cards
 - Use a table-based layout for email compatibility
 - No images, no external resources
+- Cards should have border-radius: 8px and a subtle left border (4px) color-coded by section type
+- Section headers should be uppercase, small (12px), letter-spaced, in muted color (#94a3b8)
+- Key numbers/counts should be large and bold for scannability
 
 Structure the email with these exact sections in this order:
 
-1. **Header**: "Good morning, Josh" with today's date. A one-line weather-report-style summary of the day (e.g., "3 meetings, 2 overdue items, 1 client going cold").
+1. **Header**: "Good morning, Josh" with today's date formatted nicely (e.g., "Friday, March 28, 2026"). Below that, a one-line weather-report-style summary of the day ahead (e.g., "3 meetings, 2 overdue items, 1 client going cold"). This summary line should use colored pill-style badges for the counts.
 
-2. **The One Thing**: Based on ALL the data above, pick THE single most important thing Josh should focus on today. Display it prominently. Explain why in 1-2 sentences. Be specific and actionable, not generic.
+2. **The One Thing**: THE single most important thing Josh should focus on today, based on ALL the data. Display it in a prominent card with a blue left border. The title should be specific and actionable (not generic like "clear your inbox"). Below the title, explain WHY in 1-2 sentences grounded in the actual data. This should be the thing that, if Josh only does one thing today, moves the needle the most.
 
-3. **Today's Schedule**: Clean timeline of events. For each event tied to a client, add a one-liner "meeting prep teaser" — something useful to remember about that client based on commitments, overdue items, or relationship status. If no events, say so briefly.
+3. **Today's Schedule**: Clean timeline of events with times in a monospace-style column on the left. For each event tied to a client, add a one-liner "meeting prep teaser" in muted text below the event name — something useful to remember (open commitments, how long since last session, anything overdue). If no events, show "Clear calendar today" briefly.
 
-4. **Commitment Pulse**:
-   - Overdue items with a red indicator and days overdue count
-   - Due today items
-   - Waiting on others (what Josh is owed)
-   - If there are completed items in the last 24h, show them with a green checkmark for momentum
+4. **Commitment Pulse**: Four sub-sections in a 2x2 grid if possible (or stacked on mobile):
+   - OVERDUE: Red left border. Each item shows days overdue in a red badge. Commitment types human-readable (promise_made -> "Promise", follow_up -> "Follow-up", action_item -> "Action", deliverable -> "Deliverable", etc.)
+   - DUE TODAY: Amber left border. Clean list.
+   - WAITING ON OTHERS: Blue left border. Show who owes what and how many days you've been waiting.
+   - MOMENTUM: Green left border. Recently completed items with checkmarks. If none, skip this sub-section.
 
-5. **Who Needs Attention**: Based on commitment age, overdue items, and contact recency, list 1-3 clients that need proactive outreach today. For each, give a specific suggested action. Only include this section if there are clients that genuinely need attention.
+5. **Who Needs Attention**: 1-3 clients that need proactive outreach today, based on the combination of: days since contact, overdue item count, and strategic value. For each client, give a SPECIFIC suggested action (e.g., "Send a quick check-in email" or "Follow up on the overdue proposal"). Show this section ONLY if there are clients that genuinely need attention — don't force it.
 
-6. **Relationship Alerts**: Clients going cold (14+ days no contact). Only show if there are any.
+6. **Relationship Radar**: Clients going cold (14+ days no contact). Show as a compact list with days since contact and last contact type. Color-code: 14-21 days = amber, 21+ days = red. Only show if there are any.
 
-7. **Replies Needed**: Emails awaiting response, grouped by urgency. Only show if there are any.
+7. **Replies Needed**: Emails awaiting response. Sort by urgency (high first). Show sender and subject. Only show if there are any.
 
-8. **Footer**: A brief motivational or grounding sign-off. Keep it real, not cheesy.
+8. **Footer**: Brief, grounding sign-off. One line. Not motivational-poster cheesy — more like a thoughtful colleague. Examples of the right tone: "You've got a solid handle on things." or "Big day ahead — start with the one thing." Keep it contextual to the actual data above.
 
 Important rules:
-- If a section has no data, either skip it entirely or show a brief positive note (e.g., "All caught up on replies")
-- Keep the entire email under 800 words of visible text
-- Use spacing and subtle dividers between sections for scannability
-- Commitment types should be human-readable (promise_made -> "Promise", follow_up -> "Follow-up", etc.)
-- Output ONLY the HTML, no markdown fences, no explanation`,
+- If a section has no data, SKIP IT ENTIRELY (no empty state messages except for schedule)
+- Keep the entire email under 900 words of visible text
+- Use generous spacing (16px+ between sections) and subtle dividers (#1e293b colored hr) for scannability
+- Commitment types should be human-readable (promise_made -> "Promise", follow_up -> "Follow-up", action_item -> "Action", deliverable -> "Deliverable")
+- Never use the word "synergy" or any corporate buzzwords
+- The tone should be direct, warm, and slightly informal — like a trusted colleague, not a robot
+- Output ONLY the HTML, no markdown fences, no explanation
+- The HTML should start with <!DOCTYPE html> and be a complete valid email document`,
         },
       ],
     });

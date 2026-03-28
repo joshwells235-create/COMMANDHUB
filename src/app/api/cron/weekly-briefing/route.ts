@@ -4,7 +4,7 @@ import { sendEmail } from '@/lib/resend';
 import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
@@ -15,138 +15,282 @@ export async function GET(request: Request) {
   try {
     const supabase = createServerClient();
     const now = new Date();
-
-    // Calculate Monday of the upcoming week
-    const dayOfWeek = now.getDay(); // 0=Sunday
-    const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
-    const monday = new Date(now);
-    monday.setDate(monday.getDate() + daysUntilMonday);
-    monday.setHours(0, 0, 0, 0);
-    const mondayStr = monday.toISOString().split('T')[0];
-
-    const friday = new Date(monday);
-    friday.setDate(friday.getDate() + 5);
-    const fridayStr = friday.toISOString().split('T')[0];
-
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
-    const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000).toISOString();
     const todayStr = now.toISOString().split('T')[0];
 
-    // 1. Fetch events for the upcoming week
-    const { data: weekEvents } = await supabase
-      .from('calendar_events')
-      .select('id, subject, start_time, end_time, location, org_id, organizations(id, name)')
-      .gte('start_time', `${mondayStr}T00:00:00`)
-      .lt('start_time', `${fridayStr}T00:00:00`)
-      .order('start_time', { ascending: true });
+    // Time ranges
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000);
+    const sevenDaysAgoStr = sevenDaysAgo.toISOString();
+    const sevenDaysAgoDate = sevenDaysAgo.toISOString().split('T')[0];
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000).toISOString();
+    const twentyOneDaysAgo = new Date(now.getTime() - 21 * 86400000).toISOString();
 
-    // 2. Count commitments by status
-    const { data: allCommitments } = await supabase
+    // Next week range
+    const dayOfWeek = now.getDay();
+    const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+    const nextMonday = new Date(now);
+    nextMonday.setDate(nextMonday.getDate() + daysUntilMonday);
+    nextMonday.setHours(0, 0, 0, 0);
+    const nextMondayStr = nextMonday.toISOString().split('T')[0];
+    const nextFriday = new Date(nextMonday);
+    nextFriday.setDate(nextFriday.getDate() + 5);
+    const nextFridayStr = nextFriday.toISOString().split('T')[0];
+
+    // ========================================
+    // WEEK IN NUMBERS
+    // ========================================
+
+    // Sessions held this week (transcripts)
+    const { data: weekTranscripts } = await supabase
+      .from('transcripts')
+      .select('id, org_id, transcript_date, organizations(id, name)')
+      .gte('transcript_date', sevenDaysAgoDate)
+      .order('transcript_date', { ascending: false });
+
+    // Commitments created this week
+    const { data: weekCommitmentsCreated } = await supabase
       .from('commitments')
-      .select('id, status');
+      .select('id, title, commitment_type, org_id, organizations(id, name)')
+      .gte('created_at', sevenDaysAgoStr);
 
-    const statusCounts: Record<string, number> = {};
-    for (const c of allCommitments || []) {
-      statusCounts[c.status] = (statusCounts[c.status] || 0) + 1;
-    }
-
-    // 3. Commitments completed in the last 7 days
-    const { data: completedItems } = await supabase
+    // Commitments completed this week
+    const { data: weekCommitmentsCompleted } = await supabase
       .from('commitments')
-      .select('id, title, commitment_type, completed_at, organizations(id, name)')
+      .select('id, title, commitment_type, completed_at, org_id, organizations(id, name)')
       .eq('status', 'completed')
-      .gte('completed_at', sevenDaysAgo)
+      .gte('completed_at', sevenDaysAgoStr)
       .order('completed_at', { ascending: false });
 
-    // 4. Overdue commitments
-    const { data: overdueItems } = await supabase
-      .from('commitments')
-      .select('id, title, commitment_type, due_date, created_at, organizations(id, name)')
-      .in('status', ['pending', 'in_progress'])
-      .lt('due_date', todayStr)
-      .order('due_date', { ascending: true });
+    // Emails processed this week
+    const { data: weekEmails } = await supabase
+      .from('review_emails')
+      .select('id, org_id')
+      .gte('received_at', sevenDaysAgoStr);
 
-    // 5. Dark clients detection
+    // Calendar events this past week
+    const { data: weekEvents } = await supabase
+      .from('calendar_events')
+      .select('id, subject, start_time, org_id, organizations(id, name)')
+      .gte('start_time', sevenDaysAgoStr)
+      .lt('start_time', now.toISOString())
+      .order('start_time', { ascending: true });
+
+    // ========================================
+    // CLIENT HEALTH DASHBOARD
+    // ========================================
     const { data: activeOrgs } = await supabase
       .from('organizations')
-      .select('id, name, strategic_value')
+      .select('id, name, strategic_value, status')
       .in('status', ['active', 'prospect']);
 
-    const darkClients: Array<{ name: string; strategic_value: string; days_since_contact: number }> = [];
+    interface ClientHealth {
+      name: string;
+      strategic_value: string;
+      days_since_contact: number;
+      last_contact_type: string;
+      overdue_count: number;
+      pending_count: number;
+      completed_this_week: number;
+      sessions_this_week: number;
+      health_status: 'thriving' | 'healthy' | 'cooling' | 'at_risk';
+    }
+
+    const clientHealthData: ClientHealth[] = [];
 
     for (const org of activeOrgs || []) {
-      // Check for recent calendar events
-      const { data: recentEvents } = await supabase
-        .from('calendar_events')
-        .select('id')
-        .eq('org_id', org.id)
-        .gte('start_time', fourteenDaysAgo)
-        .limit(1);
-
-      if (recentEvents && recentEvents.length > 0) continue;
-
-      // Check for recent commitments created or completed
-      const { data: recentCommitments } = await supabase
-        .from('commitments')
-        .select('id')
-        .eq('org_id', org.id)
-        .or(`created_at.gte.${fourteenDaysAgo},completed_at.gte.${fourteenDaysAgo}`)
-        .limit(1);
-
-      if (recentCommitments && recentCommitments.length > 0) continue;
-
-      // Check for recent transcripts
-      const { data: recentTranscripts } = await supabase
+      // Last transcript
+      const { data: lastTranscript } = await supabase
         .from('transcripts')
-        .select('id')
+        .select('transcript_date')
         .eq('org_id', org.id)
-        .gte('created_at', fourteenDaysAgo)
+        .order('transcript_date', { ascending: false })
         .limit(1);
 
-      if (recentTranscripts && recentTranscripts.length > 0) continue;
+      // Last email
+      const { data: lastEmail } = await supabase
+        .from('review_emails')
+        .select('received_at')
+        .eq('org_id', org.id)
+        .order('received_at', { ascending: false })
+        .limit(1);
 
-      // Find last contact date across all sources
+      // Last calendar event (past only)
       const { data: lastEvent } = await supabase
         .from('calendar_events')
         .select('start_time')
         .eq('org_id', org.id)
+        .lt('start_time', now.toISOString())
         .order('start_time', { ascending: false })
         .limit(1);
 
-      const { data: lastCommitment } = await supabase
+      // Overdue items
+      const { data: orgOverdue } = await supabase
         .from('commitments')
-        .select('updated_at')
+        .select('id')
         .eq('org_id', org.id)
-        .order('updated_at', { ascending: false })
-        .limit(1);
+        .in('status', ['pending', 'in_progress'])
+        .lt('due_date', todayStr);
 
-      const dates: Date[] = [];
-      if (lastEvent?.[0]) dates.push(new Date(lastEvent[0].start_time));
-      if (lastCommitment?.[0]) dates.push(new Date(lastCommitment[0].updated_at));
+      // Pending items
+      const { data: orgPending } = await supabase
+        .from('commitments')
+        .select('id')
+        .eq('org_id', org.id)
+        .in('status', ['pending', 'in_progress']);
 
-      const lastContactDate = dates.length > 0 ? new Date(Math.max(...dates.map((d) => d.getTime()))) : null;
-      const daysSinceContact = lastContactDate
-        ? Math.floor((now.getTime() - lastContactDate.getTime()) / 86400000)
+      // Completed this week
+      const orgCompletedThisWeek = (weekCommitmentsCompleted || []).filter((c) => c.org_id === org.id).length;
+
+      // Sessions this week
+      const orgSessionsThisWeek = (weekTranscripts || []).filter((t) => t.org_id === org.id).length;
+
+      // Calculate days since contact
+      const dates: { date: Date; type: string }[] = [];
+      if (lastTranscript?.[0]) dates.push({ date: new Date(lastTranscript[0].transcript_date), type: 'session' });
+      if (lastEmail?.[0]) dates.push({ date: new Date(lastEmail[0].received_at), type: 'email' });
+      if (lastEvent?.[0]) dates.push({ date: new Date(lastEvent[0].start_time), type: 'meeting' });
+
+      const latest = dates.sort((a, b) => b.date.getTime() - a.date.getTime())[0];
+      const daysSince = latest
+        ? Math.floor((now.getTime() - latest.date.getTime()) / 86400000)
         : 999;
 
-      darkClients.push({
+      const overdueCount = (orgOverdue || []).length;
+      const pendingCount = (orgPending || []).length;
+
+      // Determine health status
+      let healthStatus: ClientHealth['health_status'];
+      if (daysSince <= 7 && overdueCount === 0) {
+        healthStatus = 'thriving';
+      } else if (daysSince <= 14 && overdueCount <= 1) {
+        healthStatus = 'healthy';
+      } else if (daysSince <= 21 || (daysSince <= 14 && overdueCount > 1)) {
+        healthStatus = 'cooling';
+      } else {
+        healthStatus = 'at_risk';
+      }
+
+      clientHealthData.push({
         name: org.name,
         strategic_value: org.strategic_value,
-        days_since_contact: daysSinceContact,
+        days_since_contact: daysSince,
+        last_contact_type: latest?.type || 'never',
+        overdue_count: overdueCount,
+        pending_count: pendingCount,
+        completed_this_week: orgCompletedThisWeek,
+        sessions_this_week: orgSessionsThisWeek,
+        health_status: healthStatus,
       });
     }
 
-    // 6. Pipeline info
+    // Sort: at_risk first, then cooling, then by strategic value
+    const healthOrder: Record<string, number> = { at_risk: 0, cooling: 1, healthy: 2, thriving: 3 };
+    const valueOrder: Record<string, number> = { strategic: 0, emerging: 1, standard: 2 };
+    clientHealthData.sort((a, b) => {
+      const healthDiff = (healthOrder[a.health_status] ?? 4) - (healthOrder[b.health_status] ?? 4);
+      if (healthDiff !== 0) return healthDiff;
+      return (valueOrder[a.strategic_value] ?? 3) - (valueOrder[b.strategic_value] ?? 3);
+    });
+
+    // ========================================
+    // ALL OVERDUE (for watch list)
+    // ========================================
+    const { data: allOverdue } = await supabase
+      .from('commitments')
+      .select('id, title, commitment_type, due_date, owner, created_at, organizations(id, name)')
+      .in('status', ['pending', 'in_progress'])
+      .lt('due_date', todayStr)
+      .order('due_date', { ascending: true });
+
+    // Aging commitments (pending for 14+ days regardless of due date)
+    const { data: agingCommitments } = await supabase
+      .from('commitments')
+      .select('id, title, commitment_type, due_date, owner, created_at, organizations(id, name)')
+      .in('status', ['pending', 'in_progress'])
+      .lt('created_at', fourteenDaysAgo)
+      .order('created_at', { ascending: true })
+      .limit(10);
+
+    // ========================================
+    // NEXT WEEK: events and upcoming commitments
+    // ========================================
+    const { data: nextWeekEvents } = await supabase
+      .from('calendar_events')
+      .select('id, subject, start_time, end_time, location, org_id, organizations(id, name)')
+      .gte('start_time', `${nextMondayStr}T00:00:00`)
+      .lt('start_time', `${nextFridayStr}T00:00:00`)
+      .order('start_time', { ascending: true });
+
+    const { data: nextWeekCommitments } = await supabase
+      .from('commitments')
+      .select('id, title, commitment_type, due_date, priority_score, organizations(id, name)')
+      .in('status', ['pending', 'in_progress'])
+      .gte('due_date', nextMondayStr)
+      .lte('due_date', nextFridayStr)
+      .order('due_date', { ascending: true });
+
+    // ========================================
+    // PIPELINE
+    // ========================================
     const { data: pipelineEngagements } = await supabase
       .from('engagements')
       .select('id, name, status, value_amount, organizations(id, name)')
       .eq('status', 'active')
       .not('value_amount', 'is', null);
 
-    // Build text for Claude
-    const uniqueOrgIds = new Set((weekEvents || []).map((e) => e.org_id).filter(Boolean));
+    // ========================================
+    // FORMAT DATA FOR CLAUDE
+    // ========================================
 
-    const eventsText = (weekEvents || []).map((e) => {
+    const formatOrg = (c: { organizations?: unknown }) => {
+      const org = c.organizations as { id: string; name: string } | null;
+      return org ? ` (${org.name})` : '';
+    };
+
+    // Week in numbers
+    const sessionsCount = (weekTranscripts || []).length;
+    const commitmentsCreatedCount = (weekCommitmentsCreated || []).length;
+    const commitmentsCompletedCount = (weekCommitmentsCompleted || []).length;
+    const emailsProcessedCount = (weekEmails || []).length;
+    const meetingsCount = (weekEvents || []).length;
+
+    const weekNumbersText = `Sessions held: ${sessionsCount}
+Meetings attended: ${meetingsCount}
+Commitments created: ${commitmentsCreatedCount}
+Commitments completed: ${commitmentsCompletedCount}
+Emails processed: ${emailsProcessedCount}
+Completion rate: ${commitmentsCreatedCount > 0 ? Math.round((commitmentsCompletedCount / commitmentsCreatedCount) * 100) : 0}%`;
+
+    // Client health
+    const clientHealthText = clientHealthData.map((c) => {
+      const emoji = { thriving: 'THRIVING', healthy: 'HEALTHY', cooling: 'COOLING', at_risk: 'AT RISK' }[c.health_status];
+      return `- ${c.name} (${c.strategic_value}) | Status: ${emoji} | ${c.days_since_contact}d since contact (${c.last_contact_type}) | ${c.overdue_count} overdue, ${c.pending_count} pending | ${c.sessions_this_week} sessions this week, ${c.completed_this_week} completed this week`;
+    }).join('\n') || 'No active organizations.';
+
+    // Wins
+    const winsText = (weekCommitmentsCompleted || []).map((c) => {
+      return `- [${c.commitment_type}] ${c.title}${formatOrg(c)}`;
+    }).join('\n') || 'No completions this week.';
+
+    // Overdue
+    const overdueText = (allOverdue || []).map((c) => {
+      const daysOverdue = Math.floor((now.getTime() - new Date(c.due_date!).getTime()) / 86400000);
+      return `- [${c.commitment_type}] ${c.title}${formatOrg(c)} | ${daysOverdue} days overdue | Owner: ${c.owner}`;
+    }).join('\n') || 'Nothing overdue.';
+
+    // Aging
+    const agingText = (agingCommitments || []).map((c) => {
+      const daysOld = Math.floor((now.getTime() - new Date(c.created_at).getTime()) / 86400000);
+      return `- [${c.commitment_type}] ${c.title}${formatOrg(c)} | ${daysOld} days old | Owner: ${c.owner}`;
+    }).join('\n') || 'No aging commitments.';
+
+    // Watch list clients (cooling + at_risk)
+    const watchListClients = clientHealthData.filter((c) => c.health_status === 'cooling' || c.health_status === 'at_risk');
+    const watchListText = watchListClients.map((c) => {
+      return `- ${c.name} (${c.strategic_value}): ${c.health_status.toUpperCase()} — ${c.days_since_contact}d since contact, ${c.overdue_count} overdue`;
+    }).join('\n') || 'All clients in good shape.';
+
+    // Next week events
+    const nextWeekEventsText = (nextWeekEvents || []).map((e) => {
       const org = e.organizations as unknown as { id: string; name: string } | null;
       const start = new Date(e.start_time);
       const dayName = start.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/New_York' });
@@ -154,48 +298,28 @@ export async function GET(request: Request) {
       return `- ${dayName} ${time}: ${e.subject || 'No subject'}${org ? ` (${org.name})` : ''}`;
     }).join('\n') || 'No events scheduled.';
 
-    const completedText = (completedItems || []).map((c) => {
-      const org = c.organizations as unknown as { id: string; name: string } | null;
-      return `- [${c.commitment_type}] ${c.title}${org ? ` (${org.name})` : ''}`;
-    }).join('\n') || 'Nothing completed.';
+    // Next week commitments
+    const nextWeekCommitmentsText = (nextWeekCommitments || []).map((c) => {
+      return `- [${c.commitment_type}] ${c.title}${formatOrg(c)} | Due: ${c.due_date}`;
+    }).join('\n') || 'No commitments due next week.';
 
-    const overdueText = (overdueItems || []).map((c) => {
-      const org = c.organizations as unknown as { id: string; name: string } | null;
-      const daysOverdue = Math.floor((now.getTime() - new Date(c.due_date!).getTime()) / 86400000);
-      return `- [${c.commitment_type}] ${c.title}${org ? ` (${org.name})` : ''} | ${daysOverdue} days overdue`;
-    }).join('\n') || 'Nothing overdue.';
-
-    const oldestOverdue = overdueItems && overdueItems.length > 0
-      ? Math.floor((now.getTime() - new Date(overdueItems[0].due_date!).getTime()) / 86400000)
-      : 0;
-
-    // Client health: for each active org, summarize
-    const clientHealthText = (activeOrgs || []).map((org) => {
-      const orgEvents = (weekEvents || []).filter((e) => e.org_id === org.id);
-      const orgOverdue = (overdueItems || []).filter((c) => {
-        const cOrg = c.organizations as unknown as { id: string; name: string } | null;
-        return cOrg?.id === org.id;
-      });
-      const nextEvent = orgEvents[0];
-      const nextEventStr = nextEvent
-        ? new Date(nextEvent.start_time).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' })
-        : 'None this week';
-      return `- ${org.name} (${org.strategic_value}): Next event: ${nextEventStr}, ${orgOverdue.length} overdue items`;
-    }).join('\n') || 'No active organizations.';
-
-    const darkClientsText = darkClients.length > 0
-      ? darkClients.map((d) => `- ${d.name} (${d.strategic_value}): ${d.days_since_contact} days since last contact`).join('\n')
-      : 'All clients have recent touchpoints.';
-
+    // Pipeline
     const pipelineText = (pipelineEngagements || []).map((e) => {
       const org = e.organizations as unknown as { id: string; name: string } | null;
       return `- ${e.name}${org ? ` (${org.name})` : ''}: $${(e.value_amount || 0).toLocaleString()}`;
     }).join('\n') || 'No active pipeline items.';
 
-    const statusCountsText = Object.entries(statusCounts)
-      .map(([status, count]) => `${status}: ${count}`)
-      .join(', ');
+    // All transcripts this week for cross-client insights
+    const sessionClientsThisWeek = [...new Set((weekTranscripts || []).map((t) => {
+      const org = t.organizations as unknown as { id: string; name: string } | null;
+      return org?.name;
+    }).filter(Boolean))];
 
+    const uniqueNextWeekOrgIds = [...new Set((nextWeekEvents || []).map((e) => e.org_id).filter(Boolean))];
+
+    // ========================================
+    // CALL CLAUDE
+    // ========================================
     const client = new Anthropic();
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -203,29 +327,95 @@ export async function GET(request: Request) {
       messages: [
         {
           role: 'user',
-          content: `Generate a weekly briefing email for Josh Wells. Week of ${mondayStr}.
+          content: `You are Josh Wells' chief of staff. Generate his weekly practice report email. This is sent on Sunday evening or early Monday morning to set up the week ahead. It should feel like a comprehensive but scannable debrief of the past week and preview of the next.
 
-WEEK AHEAD: ${(weekEvents || []).length} events across ${uniqueOrgIds.size} clients
-${eventsText}
+REPORTING PERIOD: Past 7 days ending ${todayStr}
 
-COMMITMENT STATUS: ${statusCountsText}
+WEEK IN NUMBERS:
+${weekNumbersText}
 
-COMPLETED LAST WEEK: ${(completedItems || []).length} items
-${completedText}
-
-OVERDUE: ${(overdueItems || []).length} items (oldest: ${oldestOverdue} days)
-${overdueText}
-
-CLIENT HEALTH:
+CLIENT HEALTH DASHBOARD (${(activeOrgs || []).length} active clients):
 ${clientHealthText}
 
-DARK CLIENTS: ${darkClients.length} orgs with no touchpoint in 14+ days
-${darkClientsText}
+WINS THIS WEEK (${commitmentsCompletedCount} completions):
+${winsText}
+
+OVERDUE ITEMS (${(allOverdue || []).length} total):
+${overdueText}
+
+AGING COMMITMENTS (14+ days old, still pending):
+${agingText}
+
+WATCH LIST CLIENTS (cooling or at risk):
+${watchListText}
+
+SESSIONS THIS WEEK: ${sessionsCount} sessions with ${sessionClientsThisWeek.length} clients (${sessionClientsThisWeek.join(', ') || 'none'})
+
+NEXT WEEK: ${(nextWeekEvents || []).length} events across ${uniqueNextWeekOrgIds.length} clients
+${nextWeekEventsText}
+
+NEXT WEEK COMMITMENTS DUE:
+${nextWeekCommitmentsText}
 
 PIPELINE:
 ${pipelineText}
 
-Format as clean HTML email with dark theme (#0f172a bg, #e2e8f0 text, #3b82f6 accents). Inline CSS only. Scannable sections.`,
+Generate the email as complete HTML with inline CSS. The design MUST follow these rules:
+- Dark theme: background #0f172a, card backgrounds #1e293b, text #e2e8f0, muted text #94a3b8
+- Accent colors: blue #3b82f6, green #22c55e for positive/wins, amber #f59e0b for warnings, red #ef4444 for at-risk/overdue, purple #a855f7 for insights
+- Mobile-first: max-width 640px, centered, padding 16px on cards
+- Table-based layout for email compatibility
+- No images, no external resources
+- Cards with border-radius: 8px, left border 4px color-coded by section
+- Section headers: uppercase, 12px, letter-spaced, muted color
+- Key numbers should be large (24-32px) and bold for scannability
+
+Structure the email with these exact sections in this order:
+
+1. **Header**: "Weekly Practice Report" with the date range (e.g., "March 21 - March 28, 2026"). A one-line executive summary of the week.
+
+2. **Week in Numbers**: A clean grid showing key metrics as big numbers with labels beneath:
+   - Sessions held
+   - Commitments created
+   - Commitments completed
+   - Emails processed
+   Show completion rate as a percentage. Use green if >= 70%, amber if 40-69%, red if < 40%.
+
+3. **Client Health Dashboard**: A compact table or card list of ALL active clients with:
+   - Client name
+   - Health status badge (THRIVING = green, HEALTHY = blue, COOLING = amber, AT RISK = red)
+   - Days since contact
+   - Overdue item count (if any)
+   - Brief one-liner context per client
+   Sort: at-risk first, then cooling, then healthy, then thriving.
+
+4. **Wins This Week**: Completed commitments listed with green checkmarks. Group by client if possible. If no wins, skip section entirely.
+
+5. **Watch List**: Two sub-sections:
+   - Clients going cold or at risk (with specific recommended actions)
+   - Commitments aging out (14+ days old, still pending)
+   Only show if there are items. Use amber/red color coding.
+
+6. **Cross-Client Insight**: Based on ALL the data above, identify ONE meaningful pattern or observation across Josh's practice this week. This should be genuinely insightful — not obvious. For example: "Three of your four sessions this week involved scope discussions — you may be in a phase where clients are re-evaluating engagements" or "Your completion rate dropped but creation rate spiked — looks like you're in a planning phase." Use a purple left border for this card. 2-3 sentences max.
+
+7. **Next Week Outlook**:
+   - Calendar overview (events by day)
+   - Commitments due next week
+   - Suggested priorities based on what's overdue, what's due, and client health
+   - If the week looks heavy, say so. If light, note the opportunity.
+
+8. **Footer**: Brief sign-off with a forward-looking one-liner. Contextual, not generic.
+
+Important rules:
+- If a section has no data, SKIP IT ENTIRELY
+- Keep the entire email under 1200 words of visible text
+- Use generous spacing between sections
+- Commitment types should be human-readable (promise_made -> "Promise", follow_up -> "Follow-up", action_item -> "Action", deliverable -> "Deliverable")
+- The cross-client insight should be genuinely thoughtful — do not be generic or use corporate speak
+- Never use the word "synergy" or similar buzzwords
+- Tone: authoritative but warm, like a weekly partner meeting debrief
+- Output ONLY the HTML, no markdown fences, no explanation
+- The HTML should start with <!DOCTYPE html> and be a complete valid email document`,
         },
       ],
     });
@@ -235,20 +425,28 @@ Format as clean HTML email with dark theme (#0f172a bg, #e2e8f0 text, #3b82f6 ac
       throw new Error('No AI response received');
     }
 
-    const htmlContent = textContent.text;
+    let htmlContent = textContent.text;
+    // Strip markdown fences if Claude included them
+    htmlContent = htmlContent.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '');
 
-    // 8. Send via Resend
+    // Send via Resend
+    const weekLabel = `${sevenDaysAgo.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
     const recipient = process.env.JOSH_EMAIL || 'josh@example.com';
-    await sendEmail(recipient, `Weekly Briefing - Week of ${mondayStr}`, htmlContent);
+    await sendEmail(recipient, `Weekly Practice Report — ${weekLabel}`, htmlContent);
 
     return NextResponse.json({
       success: true,
-      week_of: mondayStr,
-      events_count: (weekEvents || []).length,
-      completed_count: (completedItems || []).length,
-      overdue_count: (overdueItems || []).length,
-      dark_clients_count: darkClients.length,
-      pipeline_count: (pipelineEngagements || []).length,
+      week_ending: todayStr,
+      sessions_count: sessionsCount,
+      commitments_created: commitmentsCreatedCount,
+      commitments_completed: commitmentsCompletedCount,
+      emails_processed: emailsProcessedCount,
+      meetings_count: meetingsCount,
+      active_clients: (activeOrgs || []).length,
+      at_risk_clients: clientHealthData.filter((c) => c.health_status === 'at_risk').length,
+      cooling_clients: clientHealthData.filter((c) => c.health_status === 'cooling').length,
+      overdue_count: (allOverdue || []).length,
+      next_week_events: (nextWeekEvents || []).length,
     });
   } catch (error) {
     console.error('Weekly briefing error:', error);
