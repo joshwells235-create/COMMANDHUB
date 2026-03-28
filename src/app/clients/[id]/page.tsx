@@ -25,6 +25,8 @@ import {
   Loader2,
   Sparkles,
   PenLine,
+  Pencil,
+  Save,
 } from 'lucide-react';
 import { useClientDetail } from '@/lib/hooks/use-client-detail';
 import type { Transcript, TranscriptTheme, LanguageLeak } from '@/lib/hooks/use-client-detail';
@@ -144,6 +146,47 @@ export default function ClientDetailPage() {
   async function handleCancel(id: string) {
     await fetch(`/api/commitments/${id}`, { method: 'DELETE' });
     refresh();
+  }
+
+  const [editingCommitmentId, setEditingCommitmentId] = useState<string | null>(null);
+  const [commitEditFields, setCommitEditFields] = useState<Record<string, string | null>>({});
+  const [commitSaving, setCommitSaving] = useState(false);
+
+  function startEditingCommitment(c: { id: string; title: string; description: string | null; commitment_type: string; due_date: string | null; owner: string; other_party: string | null }) {
+    setEditingCommitmentId(c.id);
+    setCommitEditFields({
+      title: c.title,
+      description: c.description || '',
+      commitment_type: c.commitment_type,
+      due_date: c.due_date ? c.due_date.split('T')[0] : '',
+      owner: c.owner,
+      other_party: c.other_party || '',
+    });
+  }
+
+  async function saveCommitmentEdit(id: string) {
+    setCommitSaving(true);
+    try {
+      const res = await fetch(`/api/commitments/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: commitEditFields.title,
+          description: commitEditFields.description || null,
+          commitment_type: commitEditFields.commitment_type,
+          due_date: commitEditFields.due_date || null,
+          owner: commitEditFields.owner,
+          other_party: commitEditFields.other_party || null,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      setEditingCommitmentId(null);
+      refresh();
+    } catch {
+      // stay in edit mode on error
+    } finally {
+      setCommitSaving(false);
+    }
   }
 
   async function handleSearch() {
@@ -584,7 +627,7 @@ export default function ClientDetailPage() {
                           </span>
                         </button>
 
-                        {isExpanded && (
+                        {isExpanded && editingCommitmentId !== c.id && (
                           <div className="px-4 pb-3">
                             {c.description && (
                               <p className="text-xs text-muted mb-2">
@@ -609,6 +652,102 @@ export default function ClientDetailPage() {
                                 className="flex items-center gap-1 px-3 py-1.5 bg-danger/20 text-danger rounded-md text-xs font-medium hover:bg-danger/30"
                               >
                                 <X className="w-3 h-3" /> Cancel
+                              </button>
+                              <button
+                                onClick={() => startEditingCommitment(c)}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-primary/20 text-primary rounded-md text-xs font-medium hover:bg-primary/30 ml-auto"
+                              >
+                                <Pencil className="w-3 h-3" /> Edit
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {editingCommitmentId === c.id && (
+                          <div className="px-4 pb-4 space-y-2">
+                            <div>
+                              <label className="text-[10px] text-muted uppercase tracking-wide">Title</label>
+                              <input
+                                type="text"
+                                value={commitEditFields.title || ''}
+                                onChange={(e) => setCommitEditFields({ ...commitEditFields, title: e.target.value })}
+                                className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-muted uppercase tracking-wide">Description</label>
+                              <textarea
+                                value={commitEditFields.description || ''}
+                                onChange={(e) => setCommitEditFields({ ...commitEditFields, description: e.target.value })}
+                                rows={2}
+                                className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary resize-y"
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] text-muted uppercase tracking-wide">Type</label>
+                                <select
+                                  value={commitEditFields.commitment_type || ''}
+                                  onChange={(e) => setCommitEditFields({ ...commitEditFields, commitment_type: e.target.value })}
+                                  className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm"
+                                >
+                                  <option value="promise_made">Promise Made</option>
+                                  <option value="ask_received">Ask Received</option>
+                                  <option value="follow_up">Follow Up</option>
+                                  <option value="waiting_on">Waiting On</option>
+                                  <option value="deliverable">Deliverable</option>
+                                  <option value="prep">Prep</option>
+                                  <option value="internal">Internal</option>
+                                  <option value="note_to_self">Note to Self</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-muted uppercase tracking-wide">Due Date</label>
+                                <input
+                                  type="date"
+                                  value={commitEditFields.due_date || ''}
+                                  onChange={(e) => setCommitEditFields({ ...commitEditFields, due_date: e.target.value })}
+                                  className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm"
+                                />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-[10px] text-muted uppercase tracking-wide">Owner</label>
+                                <select
+                                  value={commitEditFields.owner || 'josh'}
+                                  onChange={(e) => setCommitEditFields({ ...commitEditFields, owner: e.target.value })}
+                                  className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm"
+                                >
+                                  <option value="josh">Josh</option>
+                                  <option value="other">Other</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-muted uppercase tracking-wide">Other Party</label>
+                                <input
+                                  type="text"
+                                  value={commitEditFields.other_party || ''}
+                                  onChange={(e) => setCommitEditFields({ ...commitEditFields, other_party: e.target.value })}
+                                  placeholder="Name..."
+                                  className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                onClick={() => saveCommitmentEdit(c.id)}
+                                disabled={commitSaving || !commitEditFields.title?.trim()}
+                                className="flex items-center gap-1 px-3 py-1.5 btn-gradient text-white rounded-md text-xs font-medium disabled:opacity-50"
+                              >
+                                {commitSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingCommitmentId(null)}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-card-hover text-muted rounded-md text-xs font-medium hover:text-foreground"
+                              >
+                                Cancel
                               </button>
                             </div>
                           </div>

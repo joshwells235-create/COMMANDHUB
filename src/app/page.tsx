@@ -31,6 +31,7 @@ export default function FocusView() {
     completeCommitment,
     snoozeCommitment,
     cancelCommitment,
+    updateCommitment,
   } = useCommitments({ status: 'pending,in_progress', limit: 50 });
 
   const { commitments: waitingOn } = useCommitments({
@@ -191,6 +192,7 @@ export default function FocusView() {
               onComplete={completeCommitment}
               onSnooze={snoozeCommitment}
               onCancel={cancelCommitment}
+              onUpdate={updateCommitment}
             />
           </div>
 
