@@ -125,6 +125,9 @@ CREATE TABLE transcripts (
   notable_quotes JSONB,
   ai_extraction JSONB,
   review_status TEXT DEFAULT 'pending',
+  is_processed BOOLEAN DEFAULT false,
+  source TEXT DEFAULT 'manual',
+  webhook_metadata JSONB,
   metadata JSONB,
   created_at TIMESTAMPTZ DEFAULT now()
 );
