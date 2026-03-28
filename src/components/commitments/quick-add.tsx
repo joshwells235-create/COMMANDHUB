@@ -9,6 +9,8 @@ import { format } from 'date-fns';
 interface QuickAddProps {
   organizations: Organization[];
   onSubmit: (input: CommitmentCreateInput) => Promise<void>;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 const COMMITMENT_TYPES: { value: CommitmentType; label: string }[] = [
@@ -22,8 +24,13 @@ const COMMITMENT_TYPES: { value: CommitmentType; label: string }[] = [
   { value: 'waiting_on', label: 'Waiting On' },
 ];
 
-export function QuickAdd({ organizations, onSubmit }: QuickAddProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export function QuickAdd({ organizations, onSubmit, isOpen: externalOpen, onClose }: QuickAddProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isOpen = externalOpen ?? internalOpen;
+  const setIsOpen = (open: boolean) => {
+    setInternalOpen(open);
+    if (!open && onClose) onClose();
+  };
   const [title, setTitle] = useState('');
   const [orgId, setOrgId] = useState('');
   const [commitmentType, setCommitmentType] = useState<CommitmentType>('note_to_self');

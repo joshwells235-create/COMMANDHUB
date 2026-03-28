@@ -311,6 +311,8 @@ export default function FocusView() {
       {/* Quick Add Modal */}
       <QuickAdd
         organizations={organizations}
+        isOpen={showQuickAdd}
+        onClose={() => setShowQuickAdd(false)}
         onSubmit={async (input) => {
           await createCommitment(input);
         }}
