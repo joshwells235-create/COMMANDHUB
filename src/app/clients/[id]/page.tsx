@@ -56,6 +56,45 @@ export default function ClientDetailPage() {
   const [showDraft, setShowDraft] = useState(false);
   const [expandedCommitment, setExpandedCommitment] = useState<string | null>(null);
   const [snoozeTarget, setSnoozeTarget] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editFields, setEditFields] = useState({
+    name: '',
+    status: '',
+    strategic_value: '',
+    industry: '',
+    notes: '',
+  });
+
+  const startEditing = () => {
+    if (!organization) return;
+    setEditFields({
+      name: organization.name,
+      status: organization.status,
+      strategic_value: organization.strategic_value,
+      industry: organization.industry || '',
+      notes: organization.notes || '',
+    });
+    setEditing(true);
+  };
+
+  const saveEdits = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/organizations/${orgId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFields),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      setEditing(false);
+      refresh();
+    } catch {
+      // stay in edit mode on failure
+    } finally {
+      setSaving(false);
+    }
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResult, setSearchResult] = useState<{
     answer: string;
@@ -262,68 +301,158 @@ export default function ClientDetailPage() {
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-6 pb-24">
         {/* Organization Header */}
         <div className="premium-card p-5">
-          <div className="flex items-start justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-muted" />
-              <h2 className="text-xl font-bold text-foreground">
-                {organization.name}
-              </h2>
+          {editing ? (
+            /* ---- EDIT MODE ---- */
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-muted block mb-1">Name</label>
+                <input
+                  type="text"
+                  value={editFields.name}
+                  onChange={(e) => setEditFields({ ...editFields, name: e.target.value })}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-muted block mb-1">Status</label>
+                  <select
+                    value={editFields.status}
+                    onChange={(e) => setEditFields({ ...editFields, status: e.target.value })}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="active">Active</option>
+                    <option value="prospect">Prospect</option>
+                    <option value="paused">Paused</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted block mb-1">Strategic Value</label>
+                  <select
+                    value={editFields.strategic_value}
+                    onChange={(e) => setEditFields({ ...editFields, strategic_value: e.target.value })}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="emerging">Emerging</option>
+                    <option value="strategic">Strategic</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted block mb-1">Industry</label>
+                <input
+                  type="text"
+                  value={editFields.industry}
+                  onChange={(e) => setEditFields({ ...editFields, industry: e.target.value })}
+                  placeholder="e.g. Healthcare, Tech, Financial Services"
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted block mb-1">Notes</label>
+                <textarea
+                  value={editFields.notes}
+                  onChange={(e) => setEditFields({ ...editFields, notes: e.target.value })}
+                  rows={3}
+                  placeholder="Key context, relationship notes..."
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary resize-y"
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={saveEdits}
+                  disabled={saving || !editFields.name.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 btn-gradient rounded-lg text-sm font-medium disabled:opacity-50"
+                >
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Save
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  className="flex items-center gap-1.5 px-4 py-2 text-muted hover:text-foreground text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-            {organization.strategic_value === 'strategic' && (
-              <Star className="w-5 h-5 text-warning" />
-            )}
-            {organization.strategic_value === 'emerging' && (
-              <TrendingUp className="w-5 h-5 text-primary" />
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                'text-xs px-2 py-0.5 rounded-full font-medium',
-                statusColor[organization.status] || 'bg-muted/20 text-muted'
-              )}
-            >
-              {organization.status}
-            </span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-card-hover text-muted font-medium">
-              {organization.strategic_value}
-            </span>
-            {organization.industry && (
-              <span className="text-xs text-muted">
-                {organization.industry}
-              </span>
-            )}
-          </div>
-          {organization.notes && (
-            <p className="text-sm text-muted mt-3">{organization.notes}</p>
-          )}
-          {(() => {
-            const sessionComparison = latestTranscript?.ai_extraction?.session_comparison as
-              | { momentum?: { direction?: string } }
-              | undefined;
-            const direction = sessionComparison?.momentum?.direction;
-            if (!direction) return null;
-            const colors: Record<string, string> = {
-              accelerating: 'bg-success/20 text-success',
-              steady: 'bg-primary/20 text-primary',
-              stalling: 'bg-warning/20 text-warning',
-              regressing: 'bg-danger/20 text-danger',
-            };
-            return (
-              <div className="flex items-center gap-2 mt-3">
-                <TrendingUp className="w-4 h-4 text-muted" />
+          ) : (
+            /* ---- VIEW MODE ---- */
+            <>
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-muted" />
+                  <h2 className="text-xl font-bold text-foreground">
+                    {organization.name}
+                  </h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  {organization.strategic_value === 'strategic' && (
+                    <Star className="w-5 h-5 text-warning" />
+                  )}
+                  {organization.strategic_value === 'emerging' && (
+                    <TrendingUp className="w-5 h-5 text-primary" />
+                  )}
+                  <button
+                    onClick={startEditing}
+                    className="p-1.5 text-muted hover:text-foreground hover:bg-card-hover rounded-md transition-colors"
+                    title="Edit organization"
+                  >
+                    <PenLine className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={cn(
-                    'text-xs px-2 py-0.5 rounded-full font-medium capitalize',
-                    colors[direction] || 'bg-muted/20 text-muted'
+                    'text-xs px-2 py-0.5 rounded-full font-medium',
+                    statusColor[organization.status] || 'bg-muted/20 text-muted'
                   )}
                 >
-                  {direction}
+                  {organization.status}
                 </span>
-                <span className="text-xs text-muted">momentum</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-card-hover text-muted font-medium">
+                  {organization.strategic_value}
+                </span>
+                {organization.industry && (
+                  <span className="text-xs text-muted">
+                    {organization.industry}
+                  </span>
+                )}
               </div>
-            );
-          })()}
+              {organization.notes && (
+                <p className="text-sm text-muted mt-3">{organization.notes}</p>
+              )}
+              {(() => {
+                const sessionComparison = latestTranscript?.ai_extraction?.session_comparison as
+                  | { momentum?: { direction?: string } }
+                  | undefined;
+                const direction = sessionComparison?.momentum?.direction;
+                if (!direction) return null;
+                const colors: Record<string, string> = {
+                  accelerating: 'bg-success/20 text-success',
+                  steady: 'bg-primary/20 text-primary',
+                  stalling: 'bg-warning/20 text-warning',
+                  regressing: 'bg-danger/20 text-danger',
+                };
+                return (
+                  <div className="flex items-center gap-2 mt-3">
+                    <TrendingUp className="w-4 h-4 text-muted" />
+                    <span
+                      className={cn(
+                        'text-xs px-2 py-0.5 rounded-full font-medium capitalize',
+                        colors[direction] || 'bg-muted/20 text-muted'
+                      )}
+                    >
+                      {direction}
+                    </span>
+                    <span className="text-xs text-muted">momentum</span>
+                  </div>
+                );
+              })()}
+            </>
+          )}
         </div>
 
         {/* Prep Mode + Generate Briefing Buttons */}
