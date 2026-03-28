@@ -58,9 +58,22 @@ export async function POST(request: NextRequest) {
     const engagement = transcript.engagements as { name: string; type: string | null } | null;
     const engagementName = engagement?.name || 'General';
     const engagementType = engagement?.type || 'session';
-    const participants = Array.isArray(transcript.participants)
-      ? transcript.participants.map((p: { name?: string; role?: string }) => `${p.name || 'Unknown'}${p.role ? ` (${p.role})` : ''}`).join(', ')
-      : 'Not specified';
+
+    // Handle participants as either string[], {name,role}[], or string
+    let participantNames: string[] = [];
+    if (Array.isArray(transcript.participants)) {
+      participantNames = transcript.participants.map((p: string | { name?: string; role?: string }) =>
+        typeof p === 'string' ? p : `${p.name || 'Unknown'}${p.role ? ` (${p.role})` : ''}`
+      );
+    } else if (typeof transcript.participants === 'string') {
+      participantNames = transcript.participants.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+    const participants = participantNames.length > 0 ? participantNames.join(', ') : 'Not specified';
+
+    // Also fetch known contacts for this org to help with speaker identification
+    const contactNames = contacts ? contacts.map((c) => c.name).filter(Boolean) : [];
+    const allKnownNames = [...new Set([...participantNames, ...contactNames])].filter(Boolean);
+
     const transcriptDate = transcript.transcript_date || 'Unknown';
     const personalArea = (transcript.metadata as Record<string, unknown>)?.personal_area || null;
 
@@ -71,6 +84,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Build the appropriate analysis prompt based on category
+    const speakerMapping = allKnownNames.length > 0
+      ? `\n\nIMPORTANT — SPEAKER IDENTIFICATION:
+The participants in this meeting are: ${allKnownNames.join(', ')}. One of them is always Josh Wells (the consultant/coach).
+When the transcript uses generic labels like "Speaker 1", "Speaker 2", "Speaker A", "Speaker B", etc., you MUST identify who each speaker is based on context, what they say, and the participant list above. Use their real names throughout your analysis — NEVER use "Speaker 1" or "Speaker 2" in your output. Josh is typically the one asking questions, coaching, and facilitating.${contactNames.length > 0 ? `\nKnown contacts at ${orgName}: ${contactNames.join(', ')}` : ''}`
+      : '';
+
     const businessPrompt = `You are analyzing a transcript from Josh Wells's consulting practice.
 Josh is a leadership development consultant who uses frameworks including
 Language Leaks (Avatar vs Source Code, Agency/Identity/Worth lenses),
@@ -80,7 +99,7 @@ assessments, Five Dysfunctions of a Team, and EQ-i 2.0.
 Organization: ${orgName}
 Engagement: ${engagementName} (${engagementType})
 Date: ${transcriptDate}
-Participants: ${participants}
+Participants: ${participants}${speakerMapping}
 
 TRANSCRIPT:
 ${safeText}
@@ -131,12 +150,18 @@ Analyze and return JSON only (no markdown code blocks):
   ]
 }`;
 
+    const personalSpeakerMapping = participantNames.length > 0
+      ? `\n\nIMPORTANT — SPEAKER IDENTIFICATION:
+The participants in this conversation are: ${participantNames.join(', ')}. One of them is Josh Wells.
+When the transcript uses generic labels like "Speaker 1", "Speaker 2", etc., you MUST identify who each speaker is and use their real names throughout your analysis — NEVER use "Speaker 1" or "Speaker 2" in your output.`
+      : '';
+
     const personalPrompt = `You are analyzing a personal transcript for Josh Wells.
 This is NOT a client or business conversation — it's a personal one${personalArea ? ` related to ${personalArea}` : ''}.
 Examples: doctor visit, contractor discussion, family conversation, personal finance meeting, etc.
 
 Date: ${transcriptDate}
-Participants: ${participants}
+Participants: ${participants}${personalSpeakerMapping}
 
 TRANSCRIPT:
 ${safeText}
