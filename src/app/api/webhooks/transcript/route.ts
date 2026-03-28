@@ -105,8 +105,8 @@ export async function POST(request: NextRequest) {
       title ||
       `${source.charAt(0).toUpperCase() + source.slice(1)} transcript – ${new Date(date || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
-    // ---- Fuzzy org / contact matching (auto-creates if needed) ----
-    const orgId = await matchOrCreateOrganization(
+    // ---- Classify personal vs business and match org ----
+    const classification = await classifyAndMatchOrganization(
       supabase,
       resolvedTitle,
       transcript_text,
@@ -114,12 +114,20 @@ export async function POST(request: NextRequest) {
       participants
     );
 
+    const orgId = classification.orgId;
+    const transcriptCategory = classification.category;
+
     // ---- Normalise participants into the shape the DB expects ----
     const participantRecords = Array.isArray(participants)
       ? participants.map((p) => (typeof p === 'string' ? { name: p } : p))
       : null;
 
     // ---- Insert transcript record ----
+    const transcriptMetadata = {
+      ...(metadata || {}),
+      ...(classification.personalArea ? { personal_area: classification.personalArea } : {}),
+    };
+
     const { data: transcript, error: insertError } = await supabase
       .from('transcripts')
       .insert({
@@ -127,6 +135,7 @@ export async function POST(request: NextRequest) {
         org_id: orgId,
         transcript_date: date || new Date().toISOString(),
         transcript_type: meeting_type || null,
+        category: transcriptCategory,
         duration_minutes: duration_minutes || null,
         participants: participantRecords,
         raw_text: transcript_text,
@@ -134,6 +143,7 @@ export async function POST(request: NextRequest) {
         review_status: 'pending',
         source: source,
         webhook_metadata: metadata || null,
+        metadata: Object.keys(transcriptMetadata).length > 0 ? transcriptMetadata : null,
       })
       .select()
       .single();
@@ -168,6 +178,7 @@ export async function POST(request: NextRequest) {
         title: resolvedTitle,
         org_id: orgId,
         org_matched: orgId !== null,
+        category: transcriptCategory,
         message: 'Transcript ingested successfully. AI processing triggered.',
       },
       { status: 200 }
@@ -182,16 +193,38 @@ export async function POST(request: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
-// Fuzzy organisation matching – auto-creates org + contacts when no match
+// Classification result – personal vs business + org matching
 // ---------------------------------------------------------------------------
-async function matchOrCreateOrganization(
+interface TranscriptClassification {
+  category: 'business' | 'personal';
+  personalArea: string | null;
+  orgId: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Classify transcript (personal vs business) and match org when business
+// ---------------------------------------------------------------------------
+async function classifyAndMatchOrganization(
   supabase: ReturnType<typeof createServerClient>,
   title: string,
   transcriptText: string,
   source: string,
   participants?: string[]
-): Promise<string | null> {
+): Promise<TranscriptClassification> {
   try {
+    // First, use Claude to classify personal vs business AND extract org info
+    const classification = await extractClassificationAndOrg(supabase, title, transcriptText, source);
+
+    // If personal, skip org matching entirely
+    if (classification.isPersonal) {
+      return {
+        category: 'personal',
+        personalArea: classification.personalArea,
+        orgId: null,
+      };
+    }
+
+    // Business transcript – try to match an existing org first
     // 1. Fetch all organisations
     const { data: orgs } = await supabase
       .from('organizations')
@@ -203,18 +236,16 @@ async function matchOrCreateOrganization(
       // Check if any org name appears in the title (case-insensitive)
       for (const org of orgs) {
         if (titleLower.includes(org.name.toLowerCase())) {
-          return org.id;
+          return { category: 'business', personalArea: null, orgId: org.id };
         }
       }
 
       // Also check common abbreviations / acronyms from the title
-      // e.g. "Meeting with Sarah - MMG" should match "MMG" org
       const titleWords = titleLower.split(/[\s\-–—,]+/).filter((w) => w.length >= 2);
       for (const org of orgs) {
         const orgNameLower = org.name.toLowerCase();
-        // Check if any word in the title exactly matches the org name
         if (titleWords.includes(orgNameLower)) {
-          return org.id;
+          return { category: 'business', personalArea: null, orgId: org.id };
         }
       }
     }
@@ -232,58 +263,56 @@ async function matchOrCreateOrganization(
           if (!participantLower) continue;
 
           for (const contact of contacts) {
-            // Case-insensitive exact name match or substring match
             const contactNameLower = contact.name.toLowerCase();
             if (
               contactNameLower === participantLower ||
               contactNameLower.includes(participantLower) ||
               participantLower.includes(contactNameLower)
             ) {
-              return contact.org_id;
+              return { category: 'business', personalArea: null, orgId: contact.org_id };
             }
           }
         }
       }
     }
 
-    // 3. No match found – use Claude to extract org info and auto-create
-    const claudeOrgId = await extractAndCreateOrganization(supabase, title, transcriptText, source);
-    if (claudeOrgId) return claudeOrgId;
+    // 3. If Claude extracted an org name, create it
+    if (classification.orgId) {
+      return { category: 'business', personalArea: null, orgId: classification.orgId };
+    }
 
-    // 4. Claude-based detection also failed – try auto-detect from participant emails
+    // 4. Try auto-detect from participant emails
     if (participants && participants.length > 0) {
       for (const participant of participants) {
-        // Participants may be strings like "Name <email>" or just email addresses
         const raw = typeof participant === 'string' ? participant : '';
         const emailMatch = raw.match(/<([^>]+@[^>]+)>/) || raw.match(/([^\s]+@[^\s]+)/);
         if (!emailMatch) continue;
 
         const email = emailMatch[1];
-        // Derive a display name: text before the <email>, or the local part
         const namePart = raw.replace(/<[^>]+>/, '').trim();
         const displayName = namePart || email.split('@')[0];
 
         const result = await autoDetectOrganization(displayName, email, title, transcriptText.slice(0, 200));
-        if (result) return result.org_id;
+        if (result) return { category: 'business', personalArea: null, orgId: result.org_id };
       }
     }
 
-    return null;
+    return { category: 'business', personalArea: null, orgId: null };
   } catch (error) {
-    console.error('Error during org matching:', error);
-    return null;
+    console.error('Error during classification/org matching:', error);
+    return { category: 'business', personalArea: null, orgId: null };
   }
 }
 
 // ---------------------------------------------------------------------------
-// Use Claude to extract org details from transcript, then create records
+// Use Claude to classify personal/business AND extract org details, then create records
 // ---------------------------------------------------------------------------
-async function extractAndCreateOrganization(
+async function extractClassificationAndOrg(
   supabase: ReturnType<typeof createServerClient>,
   title: string,
   transcriptText: string,
   source: string
-): Promise<string | null> {
+): Promise<{ isPersonal: boolean; personalArea: string | null; orgId: string | null }> {
   try {
     const anthropic = new Anthropic();
 
@@ -297,7 +326,7 @@ async function extractAndCreateOrganization(
       messages: [
         {
           role: 'user',
-          content: `Analyze this meeting transcript title and opening text. Extract information about the external organization or prospect being met with.
+          content: `Analyze this transcript title and opening text. First determine if this is a PERSONAL conversation (doctor visit, contractor, family, personal finance, social, etc.) or a BUSINESS conversation (client meeting, prospect call, coaching session, etc.).
 
 Title: ${title}
 
@@ -306,13 +335,16 @@ ${opening}
 
 Return ONLY valid JSON (no markdown fences) with this structure:
 {
-  "org_name": "Name of the external organization/prospect, or null if this is an internal meeting",
+  "is_personal": true/false,
+  "personal_area": "health" | "family" | "finance" | "home" | "social" | "legal" | "travel" | null,
+  "org_name": "Name of the external organization/prospect, or null if personal or internal meeting",
   "industry": "Industry if detectable, or null",
   "contact_names": ["List of external participant names mentioned"],
-  "meeting_type": "e.g. sales, discovery, check-in, onboarding, internal, etc."
+  "meeting_type": "e.g. sales, discovery, check-in, onboarding, internal, doctor, contractor, personal, etc."
 }
 
-If this appears to be an internal team meeting with no external organization, set org_name to null.`,
+If this is a personal conversation (doctor, dentist, contractor, family discussion, personal finance advisor, etc.), set is_personal to true, personal_area to the relevant area, and org_name to null.
+If this is an internal team meeting with no external organization, set is_personal to false and org_name to null.`,
         },
       ],
     });
@@ -321,6 +353,8 @@ If this appears to be an internal team meeting with no external organization, se
     const responseText =
       message.content[0].type === 'text' ? message.content[0].text : '';
     let extracted: {
+      is_personal: boolean;
+      personal_area: string | null;
       org_name: string | null;
       industry: string | null;
       contact_names: string[];
@@ -331,12 +365,17 @@ If this appears to be an internal team meeting with no external organization, se
       extracted = JSON.parse(responseText);
     } catch {
       console.error('Failed to parse Claude extraction response:', responseText);
-      return null;
+      return { isPersonal: false, personalArea: null, orgId: null };
+    }
+
+    // If personal, return immediately — no org creation needed
+    if (extracted.is_personal) {
+      return { isPersonal: true, personalArea: extracted.personal_area, orgId: null };
     }
 
     // If Claude couldn't identify an org (e.g. internal meeting), return null
     if (!extracted.org_name) {
-      return null;
+      return { isPersonal: false, personalArea: null, orgId: null };
     }
 
     // Create the new organization
@@ -355,7 +394,7 @@ If this appears to be an internal team meeting with no external organization, se
 
     if (orgError || !newOrg) {
       console.error('Error creating organization:', orgError);
-      return null;
+      return { isPersonal: false, personalArea: null, orgId: null };
     }
 
     // Create contact records for identified participants
@@ -373,7 +412,6 @@ If this appears to be an internal team meeting with no external organization, se
 
       if (contactError) {
         console.error('Error creating contacts:', contactError);
-        // Non-fatal – the org was still created
       }
     }
 
@@ -381,9 +419,9 @@ If this appears to be an internal team meeting with no external organization, se
       `Auto-created organization "${extracted.org_name}" (${newOrg.id}) with ${extracted.contact_names?.length || 0} contacts`
     );
 
-    return newOrg.id;
+    return { isPersonal: false, personalArea: null, orgId: newOrg.id };
   } catch (error) {
     console.error('Error in Claude extraction / org creation:', error);
-    return null;
+    return { isPersonal: false, personalArea: null, orgId: null };
   }
 }

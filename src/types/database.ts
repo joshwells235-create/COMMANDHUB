@@ -59,6 +59,7 @@ export interface Commitment {
   title: string;
   description: string | null;
   commitment_type: CommitmentType;
+  category: 'business' | 'personal';
   org_id: string | null;
   contact_id: string | null;
   engagement_id: string | null;
@@ -124,6 +125,7 @@ export type CommitmentCreateInput = {
   title: string;
   description?: string;
   commitment_type: CommitmentType;
+  category?: 'business' | 'personal';
   org_id?: string;
   contact_id?: string;
   engagement_id?: string;
