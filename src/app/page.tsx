@@ -16,6 +16,7 @@ import { TodayEvents } from '@/components/calendar/today-events';
 import { NeedsReplySection } from '@/components/review/needs-reply-section';
 import { CommandHubChat } from '@/components/chat/command-hub-chat';
 import { ClientPulse } from '@/components/dashboard/client-pulse';
+import { RelationshipHealth } from '@/components/dashboard/relationship-health';
 import { PracticeIntelligence } from '@/components/dashboard/practice-intelligence';
 import { isToday, isThisWeek } from 'date-fns';
 
@@ -207,6 +208,9 @@ export default function FocusView() {
                 </div>
               </Link>
             )}
+
+            {/* Relationship Health */}
+            <RelationshipHealth />
 
             {/* Client Pulse */}
             <ClientPulse />
