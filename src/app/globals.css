@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  /* === JARVIS PALETTE — Deep space with cyan energy === */
-  --background: #060a13;
-  --background-elevated: #0b1120;
-  --foreground: #d4e0f0;
-  --foreground-secondary: #6b82a6;
+  /* === JARVIS PALETTE — Refined for readability === */
+  --background: #0a0f1a;
+  --background-elevated: #0f1628;
+  --foreground: #e2e8f0;
+  --foreground-secondary: #8899b4;
 
-  /* Cards - glass morphism */
-  --card: rgba(11, 17, 32, 0.75);
-  --card-hover: rgba(16, 25, 45, 0.85);
-  --card-solid: #0d1525;
+  /* Cards - solid enough to read against */
+  --card: rgba(14, 21, 38, 0.88);
+  --card-hover: rgba(20, 30, 52, 0.92);
+  --card-solid: #0f1729;
 
-  /* Borders - thin tech lines */
-  --border: rgba(6, 182, 212, 0.08);
-  --border-hover: rgba(6, 182, 212, 0.2);
-  --border-active: rgba(6, 182, 212, 0.35);
+  /* Borders - visible structure */
+  --border: rgba(136, 153, 180, 0.1);
+  --border-hover: rgba(6, 182, 212, 0.25);
+  --border-active: rgba(6, 182, 212, 0.4);
 
   /* Primary - Jarvis cyan */
   --primary: #06b6d4;
@@ -38,7 +38,7 @@
   --warning-soft: rgba(245, 158, 11, 0.1);
   --success: #10b981;
   --success-soft: rgba(16, 185, 129, 0.1);
-  --muted: #3d5274;
+  --muted: #5a7194;
 
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -79,19 +79,7 @@
 body {
   background: var(--background);
   background-image:
-    /* Subtle grid pattern */
-    linear-gradient(rgba(6, 182, 212, 0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(6, 182, 212, 0.015) 1px, transparent 1px),
-    /* Radial glows */
-    radial-gradient(ellipse at 50% -10%, rgba(6, 182, 212, 0.07) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 50%, rgba(129, 140, 248, 0.04) 0%, transparent 40%),
-    radial-gradient(ellipse at 15% 80%, rgba(6, 182, 212, 0.03) 0%, transparent 45%);
-  background-size:
-    40px 40px,
-    40px 40px,
-    100% 100%,
-    100% 100%,
-    100% 100%;
+    radial-gradient(ellipse at 50% 0%, rgba(6, 182, 212, 0.04) 0%, transparent 60%);
   color: var(--foreground);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   min-height: 100vh;
@@ -118,9 +106,9 @@ button, a, input, textarea, select, [role="button"] {
 
 /* === GLASS CARD === */
 .glass {
-  backdrop-filter: blur(20px) saturate(1.2);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2);
-  background: rgba(11, 17, 32, 0.6);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  background: rgba(14, 21, 38, 0.85);
   border: 1px solid var(--border);
 }
 
@@ -213,7 +201,7 @@ button, a, input, textarea, select, [role="button"] {
 /* === STAT READOUTS — Monospace, glowing === */
 .stat-number {
   font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', monospace;
-  text-shadow: 0 0 16px currentColor;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.08);
   letter-spacing: -0.02em;
 }
 
@@ -228,18 +216,18 @@ button, a, input, textarea, select, [role="button"] {
 /* === SECTION TITLES — Tech feel === */
 .section-title {
   font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', monospace;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.15em;
   color: var(--foreground-secondary);
 }
 
 /* === PREMIUM CARD — Glass + hover lift === */
 .premium-card {
-  backdrop-filter: blur(20px) saturate(1.2);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2);
-  background: linear-gradient(135deg, rgba(11, 17, 32, 0.75), rgba(8, 14, 28, 0.65));
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  background: linear-gradient(135deg, rgba(14, 21, 38, 0.9), rgba(12, 18, 32, 0.85));
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   transition: all 0.25s ease;

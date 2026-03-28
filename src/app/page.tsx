@@ -247,20 +247,20 @@ export default function FocusView() {
 
             {/* Stats Bar */}
             <div className="grid grid-cols-4 gap-2 stagger-children">
-              <button className="glass rounded-xl p-3 text-center group hover:glow">
-                <p className="text-2xl font-bold text-danger drop-shadow-[0_0_8px_rgba(244,63,94,0.3)]">{stats.overdue}</p>
+              <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
+                <p className="text-2xl font-bold text-danger stat-number">{stats.overdue}</p>
                 <p className="text-xs text-muted">Overdue</p>
               </button>
-              <button className="glass rounded-xl p-3 text-center group hover:glow">
-                <p className="text-2xl font-bold text-warning drop-shadow-[0_0_8px_rgba(245,158,11,0.3)]">{stats.dueToday}</p>
+              <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
+                <p className="text-2xl font-bold text-warning stat-number">{stats.dueToday}</p>
                 <p className="text-xs text-muted">Due Today</p>
               </button>
-              <button className="glass rounded-xl p-3 text-center group hover:glow">
-                <p className="text-2xl font-bold text-primary drop-shadow-[0_0_8px_rgba(99,102,241,0.3)]">{stats.thisWeek}</p>
+              <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
+                <p className="text-2xl font-bold text-primary stat-number">{stats.thisWeek}</p>
                 <p className="text-xs text-muted">This Week</p>
               </button>
-              <button className="glass rounded-xl p-3 text-center group hover:glow">
-                <p className="text-2xl font-bold text-orange-400 drop-shadow-[0_0_8px_rgba(251,146,60,0.3)]">{stats.waitingOn}</p>
+              <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
+                <p className="text-2xl font-bold text-orange-400 stat-number">{stats.waitingOn}</p>
                 <p className="text-xs text-muted">Waiting On</p>
               </button>
             </div>
