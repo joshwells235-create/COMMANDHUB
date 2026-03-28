@@ -1,0 +1,451 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import {
+  Zap,
+  ArrowLeft,
+  Loader2,
+  UserCircle,
+  Brain,
+  Plug,
+  RefreshCw,
+  Check,
+  AlertTriangle,
+} from 'lucide-react';
+import { format } from 'date-fns';
+
+interface VoiceProfile {
+  id: string;
+  tone?: string;
+  signature_phrases?: string[];
+  frameworks_used?: string[];
+  updated_at: string;
+}
+
+interface PriorityInsights {
+  last_run?: string;
+  insights?: string[];
+  modifier_rules?: Array<{ rule: string; modifier: number }>;
+}
+
+export default function SettingsPage() {
+  // Voice Profile state
+  const [voiceProfile, setVoiceProfile] = useState<VoiceProfile | null>(null);
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceGenerating, setVoiceGenerating] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+
+  // Priority Learning state
+  const [priorityInsights, setPriorityInsights] = useState<PriorityInsights | null>(null);
+  const [priorityLoading, setPriorityLoading] = useState(false);
+  const [priorityRunning, setPriorityRunning] = useState(false);
+  const [priorityError, setPriorityError] = useState<string | null>(null);
+
+  // Microsoft connection state
+  const [msConnected, setMsConnected] = useState(false);
+  const [msLoading, setMsLoading] = useState(true);
+
+  // Fetch voice profile on mount
+  useEffect(() => {
+    fetchVoiceProfile();
+    fetchPriorityInsights();
+    checkMicrosoftConnection();
+  }, []);
+
+  async function fetchVoiceProfile() {
+    setVoiceLoading(true);
+    try {
+      const res = await fetch('/api/ai/voice-profile');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.profile) {
+          setVoiceProfile(data.profile);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch voice profile:', err);
+    } finally {
+      setVoiceLoading(false);
+    }
+  }
+
+  async function generateVoiceProfile() {
+    setVoiceGenerating(true);
+    setVoiceError(null);
+    try {
+      const res = await fetch('/api/ai/voice-profile', {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        throw new Error('Failed to generate voice profile');
+      }
+      const data = await res.json();
+      setVoiceProfile(data.profile);
+    } catch (err) {
+      console.error('Voice profile generation failed:', err);
+      setVoiceError('Failed to generate voice profile. Please try again.');
+    } finally {
+      setVoiceGenerating(false);
+    }
+  }
+
+  async function fetchPriorityInsights() {
+    try {
+      const res = await fetch('/api/settings/priority-insights');
+      if (res.ok) {
+        const data = await res.json();
+        setPriorityInsights(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch priority insights:', err);
+    }
+  }
+
+  async function runPriorityLearning() {
+    setPriorityRunning(true);
+    setPriorityError(null);
+    try {
+      const res = await fetch('/api/settings/learn-priorities', {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        throw new Error('Failed to run priority learning');
+      }
+      const data = await res.json();
+      setPriorityInsights(data);
+    } catch (err) {
+      console.error('Priority learning failed:', err);
+      setPriorityError('Failed to run priority learning. Please try again.');
+    } finally {
+      setPriorityRunning(false);
+    }
+  }
+
+  async function checkMicrosoftConnection() {
+    setMsLoading(true);
+    try {
+      const res = await fetch('/api/auth/microsoft/status');
+      if (res.ok) {
+        const data = await res.json();
+        setMsConnected(data.connected || false);
+      }
+    } catch {
+      // Not connected or endpoint doesn't exist yet
+      setMsConnected(false);
+    } finally {
+      setMsLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+          <Link
+            href="/"
+            className="text-muted hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-primary" />
+            <h1 className="text-lg font-bold tracking-tight">SETTINGS</h1>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6 pb-24">
+        {/* Voice Profile Section */}
+        <section className="bg-card rounded-lg border border-border/50 overflow-hidden">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+            <UserCircle className="w-5 h-5 text-primary" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+              Voice Profile
+            </h2>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            {/* Status */}
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted">
+                {voiceLoading ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Loading...
+                  </span>
+                ) : voiceProfile ? (
+                  <span>
+                    Last updated:{' '}
+                    <span className="text-foreground font-medium">
+                      {format(new Date(voiceProfile.updated_at), 'MMM d, yyyy h:mma')}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-warning">Not generated yet</span>
+                )}
+              </div>
+            </div>
+
+            {/* Generate Button */}
+            <button
+              onClick={generateVoiceProfile}
+              disabled={voiceGenerating}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary/20 text-primary rounded-lg font-medium text-sm hover:bg-primary/30 transition-colors disabled:opacity-50"
+            >
+              {voiceGenerating ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Generating Voice Profile...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  {voiceProfile ? 'Regenerate Voice Profile' : 'Generate Voice Profile'}
+                </>
+              )}
+            </button>
+
+            {voiceError && (
+              <p className="text-sm text-danger flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {voiceError}
+              </p>
+            )}
+
+            {/* Profile Details */}
+            {voiceProfile && (
+              <div className="space-y-3 bg-background rounded-lg p-4">
+                {voiceProfile.tone && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">
+                      Tone
+                    </h4>
+                    <p className="text-sm text-foreground">{voiceProfile.tone}</p>
+                  </div>
+                )}
+                {voiceProfile.signature_phrases && voiceProfile.signature_phrases.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">
+                      Signature Phrases
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {voiceProfile.signature_phrases.map((phrase, i) => (
+                        <span
+                          key={i}
+                          className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary"
+                        >
+                          {phrase}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {voiceProfile.frameworks_used && voiceProfile.frameworks_used.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">
+                      Frameworks Used
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {voiceProfile.frameworks_used.map((fw, i) => (
+                        <span
+                          key={i}
+                          className="text-xs px-2 py-0.5 rounded-full bg-success/15 text-success"
+                        >
+                          {fw}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Priority Learning Section */}
+        <section className="bg-card rounded-lg border border-border/50 overflow-hidden">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+            <Brain className="w-5 h-5 text-primary" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+              Priority Learning
+            </h2>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            {/* Status */}
+            <div className="text-sm text-muted">
+              {priorityInsights?.last_run ? (
+                <span>
+                  Last run:{' '}
+                  <span className="text-foreground font-medium">
+                    {format(new Date(priorityInsights.last_run), 'MMM d, yyyy h:mma')}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-warning">No learning run yet</span>
+              )}
+            </div>
+
+            {/* Run Button */}
+            <button
+              onClick={runPriorityLearning}
+              disabled={priorityRunning}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary/20 text-primary rounded-lg font-medium text-sm hover:bg-primary/30 transition-colors disabled:opacity-50"
+            >
+              {priorityRunning ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Running Priority Learning...
+                </>
+              ) : (
+                <>
+                  <Brain className="w-4 h-4" />
+                  Run Priority Learning
+                </>
+              )}
+            </button>
+
+            {priorityError && (
+              <p className="text-sm text-danger flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                {priorityError}
+              </p>
+            )}
+
+            {/* Insights */}
+            {priorityInsights?.insights && priorityInsights.insights.length > 0 && (
+              <div className="bg-background rounded-lg p-4">
+                <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+                  Insights
+                </h4>
+                <ul className="space-y-1.5">
+                  {priorityInsights.insights.map((insight, i) => (
+                    <li
+                      key={i}
+                      className="text-sm text-foreground flex items-start gap-2"
+                    >
+                      <span className="text-primary mt-0.5 flex-shrink-0">-</span>
+                      {insight}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Modifier Rules */}
+            {priorityInsights?.modifier_rules && priorityInsights.modifier_rules.length > 0 && (
+              <div className="bg-background rounded-lg p-4">
+                <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+                  Modifier Rules
+                </h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left text-xs font-semibold text-muted uppercase tracking-wider py-2 pr-4">
+                          Rule
+                        </th>
+                        <th className="text-right text-xs font-semibold text-muted uppercase tracking-wider py-2">
+                          Modifier
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {priorityInsights.modifier_rules.map((rule, i) => (
+                        <tr key={i} className="border-b border-border/30">
+                          <td className="py-2 pr-4 text-foreground">
+                            {rule.rule}
+                          </td>
+                          <td className="py-2 text-right font-mono">
+                            <span
+                              className={
+                                rule.modifier > 0
+                                  ? 'text-success'
+                                  : rule.modifier < 0
+                                  ? 'text-danger'
+                                  : 'text-muted'
+                              }
+                            >
+                              {rule.modifier > 0 ? '+' : ''}
+                              {rule.modifier}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Connected Services Section */}
+        <section className="bg-card rounded-lg border border-border/50 overflow-hidden">
+          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+            <Plug className="w-5 h-5 text-primary" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+              Connected Services
+            </h2>
+          </div>
+          <div className="px-5 py-4 space-y-3">
+            {/* Microsoft Outlook */}
+            <div className="flex items-center justify-between bg-background rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                  <svg
+                    className="w-4 h-4 text-blue-400"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M7.88 12.04q0 .45-.11.87-.1.41-.33.74-.22.33-.58.52-.37.2-.87.2t-.85-.2q-.35-.21-.57-.55-.22-.33-.33-.75-.1-.42-.1-.86t.1-.87q.1-.43.34-.76.22-.34.59-.54.36-.2.87-.2t.86.2q.35.21.57.55.22.34.33.75.1.43.1.87zm-4.53 0q0-.82.24-1.49.24-.66.7-1.12.46-.47 1.12-.72.66-.26 1.5-.26.84 0 1.5.26.65.25 1.11.72.46.46.7 1.12.24.67.24 1.49 0 .81-.24 1.48-.24.66-.7 1.12-.46.46-1.12.71-.65.26-1.49.26-.84 0-1.5-.26-.66-.25-1.12-.71-.46-.46-.7-1.12-.24-.67-.24-1.48zm17.65 4.12v-8.6l-6.2 4.12v-4.12l-6.2 4.34V4.04H0v16h22.8v-.88z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    Microsoft Outlook
+                  </p>
+                  <p className="text-xs text-muted">
+                    {msLoading
+                      ? 'Checking...'
+                      : msConnected
+                      ? 'Connected'
+                      : 'Not connected'}
+                  </p>
+                </div>
+              </div>
+              <div>
+                {msLoading ? (
+                  <Loader2 className="w-4 h-4 text-muted animate-spin" />
+                ) : msConnected ? (
+                  <div className="flex items-center gap-2">
+                    <span className="flex items-center gap-1 text-xs text-success">
+                      <Check className="w-3.5 h-3.5" />
+                      Connected
+                    </span>
+                    <button
+                      className="text-xs text-danger hover:text-danger/80 transition-colors font-medium"
+                      onClick={() => {
+                        // Placeholder for disconnect
+                        alert('Disconnect functionality coming soon.');
+                      }}
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                ) : (
+                  <a
+                    href="/api/auth/microsoft"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-medium transition-colors"
+                  >
+                    Connect
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}

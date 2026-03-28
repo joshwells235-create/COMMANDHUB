@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Zap, Inbox, Users, FileText } from 'lucide-react';
+import { Plus, Zap, Inbox, Users, FileText, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
@@ -64,6 +64,9 @@ export default function FocusView() {
             <h1 className="text-lg font-bold tracking-tight">COMMAND HUB</h1>
           </div>
           <div className="flex items-center gap-2">
+            <Link href="/settings" className="text-muted hover:text-foreground transition-colors">
+              <Settings className="w-5 h-5" />
+            </Link>
             {reviewEmails.length > 0 && (
               <a
                 href="/review"

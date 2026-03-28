@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Loader2,
   Sparkles,
+  PenLine,
 } from 'lucide-react';
 import { useClientDetail } from '@/lib/hooks/use-client-detail';
 import type { Transcript, TranscriptTheme, LanguageLeak } from '@/lib/hooks/use-client-detail';
@@ -35,6 +36,7 @@ import {
   getEscalationIndicator,
 } from '@/lib/utils';
 import { SnoozePicker } from '@/components/ui/snooze-picker';
+import { DraftComposer } from '@/components/drafts/draft-composer';
 import { format, formatDistanceToNow } from 'date-fns';
 
 export default function ClientDetailPage() {
@@ -51,6 +53,7 @@ export default function ClientDetailPage() {
     refresh,
   } = useClientDetail(orgId);
 
+  const [showDraft, setShowDraft] = useState(false);
   const [expandedCommitment, setExpandedCommitment] = useState<string | null>(null);
   const [snoozeTarget, setSnoozeTarget] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -292,6 +295,13 @@ export default function ClientDetailPage() {
             {briefingLoading
               ? 'Generating Pre-Session Briefing...'
               : 'Generate Pre-Session Briefing'}
+          </button>
+          <button
+            onClick={() => setShowDraft(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-card text-foreground rounded-lg font-medium text-sm hover:bg-card-hover transition-colors border border-border/50 mt-2"
+          >
+            <PenLine className="w-4 h-4 text-primary" />
+            Draft Communication
           </button>
           {briefing && (
             <div className="mt-3 bg-card rounded-lg p-4 border border-primary/30">
@@ -769,6 +779,11 @@ export default function ClientDetailPage() {
           )}
         </section>
       </main>
+
+      {/* Draft Composer */}
+      {showDraft && (
+        <DraftComposer orgId={orgId} onClose={() => setShowDraft(false)} />
+      )}
 
       {/* Snooze Picker */}
       {snoozeTarget && (
