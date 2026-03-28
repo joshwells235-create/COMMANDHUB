@@ -68,7 +68,7 @@ export function LifecycleTracker() {
   if (loading) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Engagement Lifecycle
         </h2>
         <div className="bg-card rounded-lg p-4 animate-pulse">
@@ -82,7 +82,7 @@ export function LifecycleTracker() {
   if (lifecycleData.length === 0) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Engagement Lifecycle
         </h2>
         <p className="text-sm text-muted/60 py-3">No active clients to track.</p>

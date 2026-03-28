@@ -72,7 +72,7 @@ export function ThemeAlerts() {
   if (loading) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Theme Alerts
         </h2>
         <div className="bg-card rounded-lg p-4 animate-pulse">
@@ -86,7 +86,7 @@ export function ThemeAlerts() {
   if (!data || (data.themes.length === 0 && !data.coaching_opportunity && !data.blind_spot_alert)) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Theme Alerts
         </h2>
         <div className="bg-card rounded-lg p-4 border border-border/50">
@@ -100,7 +100,7 @@ export function ThemeAlerts() {
     <div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+          <h2 className="section-title">
             Theme Alerts
           </h2>
           {alertCount > 0 && (

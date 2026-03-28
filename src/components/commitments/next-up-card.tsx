@@ -33,10 +33,10 @@ export function NextUpCard({ commitment, onComplete, onSnooze }: NextUpCardProps
 
   return (
     <>
-      <div className="bg-card rounded-xl p-5 border border-primary/30 shadow-lg shadow-primary/5">
+      <div className="rounded-xl p-5 relative" style={{ background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.06), rgba(129, 140, 248, 0.03))' }}>
         <div className="flex items-center gap-2 mb-3">
           <Target className="w-4 h-4 text-primary" />
-          <span className="text-xs font-semibold uppercase tracking-wider text-primary">Next Up</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.15em] text-gradient">Next Up</span>
         </div>
 
         <h3 className="text-lg font-semibold leading-tight">{commitment.title}</h3>
@@ -67,14 +67,14 @@ export function NextUpCard({ commitment, onComplete, onSnooze }: NextUpCardProps
         <div className="flex items-center gap-2 mt-4">
           <button
             onClick={() => onComplete(commitment.id)}
-            className="flex-1 flex items-center justify-center gap-2 bg-success/20 text-success hover:bg-success/30 rounded-lg py-2.5 text-sm font-medium transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium text-white btn-gradient"
           >
             <Check className="w-4 h-4" />
             Done
           </button>
           <button
             onClick={() => setShowSnooze(true)}
-            className="flex-1 flex items-center justify-center gap-2 bg-warning/20 text-warning hover:bg-warning/30 rounded-lg py-2.5 text-sm font-medium transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 bg-warning/15 text-warning hover:bg-warning/25 rounded-lg py-2.5 text-sm font-medium transition-all border border-warning/20 hover:border-warning/30"
           >
             <Clock className="w-4 h-4" />
             Snooze

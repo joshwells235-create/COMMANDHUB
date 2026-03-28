@@ -20,13 +20,13 @@ export function IntelligencePanel() {
   const [activeTab, setActiveTab] = useState<Tab>('health');
 
   return (
-    <div className="bg-card rounded-xl border border-border p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
+    <div className="bg-card rounded-xl border border-border p-4 premium-card">
+      <h2 className="section-title mb-3">
         Alerts & Health
       </h2>
 
       {/* Tab buttons */}
-      <div className="flex gap-1 mb-4">
+      <div className="flex gap-1 mb-4 border-b border-border pb-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
@@ -34,10 +34,10 @@ export function IntelligencePanel() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-all relative',
                 activeTab === tab.key
-                  ? 'bg-primary/15 text-primary'
-                  : 'text-muted hover:text-foreground hover:bg-card-hover'
+                  ? 'text-primary tab-active'
+                  : 'text-muted hover:text-foreground'
               )}
             >
               <Icon className="w-3.5 h-3.5" />

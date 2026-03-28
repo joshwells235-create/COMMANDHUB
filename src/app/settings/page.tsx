@@ -249,7 +249,7 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-2xl header-gradient-border">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <Link
             href="/"
@@ -258,18 +258,18 @@ export default function SettingsPage() {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-primary" />
-            <h1 className="text-lg font-bold tracking-tight">SETTINGS</h1>
+            <Zap className="w-5 h-5 text-primary pulse-alive" />
+            <h1 className="text-lg font-bold tracking-tight text-gradient">SETTINGS</h1>
           </div>
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-6 pb-24">
         {/* Voice Profile Section */}
-        <section className="bg-card rounded-lg border border-border/50 overflow-hidden">
+        <section className="premium-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
             <UserCircle className="w-5 h-5 text-primary" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+            <h2 className="section-title text-foreground">
               Voice Profile
             </h2>
           </div>
@@ -372,10 +372,10 @@ export default function SettingsPage() {
         </section>
 
         {/* Engagement Methodology Section */}
-        <section className="bg-card rounded-lg border border-border/50 overflow-hidden">
+        <section className="premium-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-primary" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+            <h2 className="section-title text-foreground">
               Engagement Methodology
             </h2>
           </div>
@@ -658,10 +658,10 @@ export default function SettingsPage() {
         </section>
 
         {/* Priority Learning Section */}
-        <section className="bg-card rounded-lg border border-border/50 overflow-hidden">
+        <section className="premium-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
             <Brain className="w-5 h-5 text-primary" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+            <h2 className="section-title text-foreground">
               Priority Learning
             </h2>
           </div>
@@ -775,10 +775,10 @@ export default function SettingsPage() {
         </section>
 
         {/* Connected Services Section */}
-        <section className="bg-card rounded-lg border border-border/50 overflow-hidden">
+        <section className="premium-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
             <Plug className="w-5 h-5 text-primary" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+            <h2 className="section-title text-foreground">
               Connected Services
             </h2>
           </div>

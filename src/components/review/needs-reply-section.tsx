@@ -34,7 +34,7 @@ export function NeedsReplySection({ emails }: NeedsReplySectionProps) {
 
   return (
     <div>
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+      <h2 className="section-title mb-3">
         Reply Needed ({sorted.length})
       </h2>
 
@@ -49,7 +49,7 @@ export function NeedsReplySection({ emails }: NeedsReplySectionProps) {
               : email.subject;
 
           return (
-            <div key={email.id} className="bg-card rounded-lg hover:bg-card-hover transition-colors">
+            <div key={email.id} className="bg-card rounded-lg hover:bg-card-hover transition-all border border-transparent hover:border-border">
               <button
                 onClick={() => setExpandedId(isExpanded ? null : email.id)}
                 className="w-full text-left px-4 py-3 flex items-start gap-3"

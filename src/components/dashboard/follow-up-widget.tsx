@@ -48,7 +48,7 @@ export function FollowUpWidget() {
   if (loading) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Follow Up
         </h2>
         <div className="bg-card rounded-lg p-4 animate-pulse">
@@ -64,7 +64,7 @@ export function FollowUpWidget() {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+        <h2 className="section-title">
           Follow Up
         </h2>
         {followUps.length > 3 && (
@@ -93,7 +93,7 @@ export function FollowUpWidget() {
             <Link
               key={item.org_id}
               href={`/follow-ups`}
-              className="flex items-center gap-3 bg-card rounded-lg px-4 py-2.5 hover:bg-card-hover transition-colors"
+              className="flex items-center gap-3 bg-card rounded-lg px-4 py-2.5 hover:bg-card-hover transition-all border border-transparent hover:border-border"
             >
               {/* Urgency dot */}
               <span

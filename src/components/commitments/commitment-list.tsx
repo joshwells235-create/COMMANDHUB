@@ -31,7 +31,7 @@ export function CommitmentList({
 
   return (
     <div>
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+      <h2 className="section-title mb-3">
         {title} ({commitments.length})
       </h2>
 
@@ -51,7 +51,7 @@ export function CommitmentList({
             return (
               <div
                 key={c.id}
-                className="bg-card rounded-lg hover:bg-card-hover transition-colors"
+                className="bg-card rounded-lg hover:bg-card-hover transition-all border border-transparent hover:border-border"
               >
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : c.id)}

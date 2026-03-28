@@ -114,7 +114,7 @@ export default function TranscriptsPage() {
   if (result) {
     return (
       <div className="min-h-screen bg-background">
-        <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
+        <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-2xl header-gradient-border">
           <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
             <Link href="/" className="text-muted hover:text-foreground">
               <ArrowLeft className="w-4 h-4" />

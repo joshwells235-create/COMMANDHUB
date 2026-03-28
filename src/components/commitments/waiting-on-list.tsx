@@ -14,7 +14,7 @@ export function WaitingOnList({ commitments, onReceived }: WaitingOnListProps) {
 
   return (
     <div>
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+      <h2 className="section-title mb-3">
         Waiting On ({commitments.length})
       </h2>
 
@@ -24,7 +24,7 @@ export function WaitingOnList({ commitments, onReceived }: WaitingOnListProps) {
           return (
             <div
               key={c.id}
-              className="bg-card rounded-lg px-4 py-3 flex items-center gap-3"
+              className="bg-card rounded-lg px-4 py-3 flex items-center gap-3 hover:bg-card-hover transition-all border border-transparent hover:border-border"
             >
               <Clock className="w-4 h-4 text-orange-400 flex-shrink-0" />
               <div className="flex-1 min-w-0">

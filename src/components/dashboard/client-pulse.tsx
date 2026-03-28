@@ -64,7 +64,7 @@ export function ClientPulse() {
   if (loading) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Client Pulse
         </h2>
         <div className="bg-card rounded-lg p-4 animate-pulse">
@@ -78,7 +78,7 @@ export function ClientPulse() {
   if (pulses.length === 0) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Client Pulse
         </h2>
         <p className="text-sm text-muted/60 py-3">No active clients.</p>
@@ -96,7 +96,7 @@ export function ClientPulse() {
           <a
             key={pulse.org.id}
             href={`/clients/${pulse.org.id}`}
-            className="flex items-center gap-3 bg-card rounded-lg px-4 py-2.5 hover:bg-card-hover transition-colors"
+            className="flex items-center gap-3 bg-card rounded-lg px-4 py-2.5 hover:bg-card-hover transition-all border border-transparent hover:border-border"
           >
             <Building2 className="w-4 h-4 text-muted flex-shrink-0" />
             <div className="flex-1 min-w-0">

@@ -155,7 +155,7 @@ export function CommandHubChat({ isOpen, onClose }: CommandHubChatProps) {
       {/* Panel */}
       <div
         className={cn(
-          'fixed z-50 bg-background border border-border flex flex-col',
+          'fixed z-50 chat-glass border border-border flex flex-col',
           // Mobile: slide up from bottom
           'bottom-0 left-0 right-0 h-[70vh] rounded-t-2xl',
           // Desktop: right sidebar
@@ -163,10 +163,10 @@ export function CommandHubChat({ isOpen, onClose }: CommandHubChatProps) {
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 flex-shrink-0 header-gradient-border" style={{ background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.06), rgba(129, 140, 248, 0.03))' }}>
           <div className="flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-primary" />
-            <h2 className="text-sm font-bold tracking-tight">Ask Command Hub</h2>
+            <h2 className="text-sm font-bold tracking-tight text-gradient">Ask Command Hub</h2>
           </div>
           <button
             onClick={onClose}
@@ -202,10 +202,11 @@ export function CommandHubChat({ isOpen, onClose }: CommandHubChatProps) {
             <div
               key={i}
               className={cn(
-                'max-w-[85%] rounded-lg px-3 py-2 text-sm',
+                'max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm',
                 msg.role === 'user'
-                  ? 'ml-auto bg-primary/20 text-foreground'
-                  : 'mr-auto bg-card text-foreground'
+                  ? 'ml-auto text-foreground border border-primary/20'
+                  : 'mr-auto glass text-foreground',
+                msg.role === 'user' && 'bg-primary/15'
               )}
             >
               {msg.role === 'assistant' ? (

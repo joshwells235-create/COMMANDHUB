@@ -47,7 +47,7 @@ export function RelationshipHealth() {
   if (loading) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Relationship Health
         </h2>
         <div className="bg-card rounded-lg p-4 animate-pulse">
@@ -85,7 +85,7 @@ export function RelationshipHealth() {
             <a
               key={h.org_id}
               href={`/clients/${h.org_id}`}
-              className="flex items-center gap-3 bg-card rounded-lg px-4 py-2.5 hover:bg-card-hover transition-colors"
+              className="flex items-center gap-3 bg-card rounded-lg px-4 py-2.5 hover:bg-card-hover transition-all border border-transparent hover:border-border"
             >
               {/* Status dot */}
               <span

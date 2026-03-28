@@ -18,7 +18,7 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
   if (loading) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Today ({today})
         </h2>
         <div className="bg-card rounded-lg p-4 animate-pulse">
@@ -32,7 +32,7 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
   if (!connected) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Today ({today})
         </h2>
         <a

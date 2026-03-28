@@ -80,7 +80,7 @@ export function PracticeIntelligence() {
   if (loading) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Practice Intelligence
         </h2>
         <div className="bg-card rounded-lg p-4 animate-pulse">
@@ -94,7 +94,7 @@ export function PracticeIntelligence() {
   if (noData && !data) {
     return (
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+        <h2 className="section-title mb-3">
           Practice Intelligence
         </h2>
         <div className="bg-card rounded-lg p-4 border border-border/50">
@@ -130,7 +130,7 @@ export function PracticeIntelligence() {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+        <h2 className="section-title">
           Practice Intelligence
         </h2>
         <button

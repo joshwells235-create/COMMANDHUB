@@ -244,7 +244,7 @@ export default function ClientDetailPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-2xl header-gradient-border">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
           <Link
             href="/clients"
@@ -261,7 +261,7 @@ export default function ClientDetailPage() {
 
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-6 pb-24">
         {/* Organization Header */}
-        <div className="bg-card rounded-lg p-5 border border-border/50">
+        <div className="premium-card p-5">
           <div className="flex items-start justify-between mb-2">
             <div className="flex items-center gap-2">
               <Building2 className="w-5 h-5 text-muted" />

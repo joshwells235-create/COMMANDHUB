@@ -138,7 +138,7 @@ export default function PrepModePage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border px-4 py-3">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-2xl header-gradient-border px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <button
             onClick={() => router.back()}
@@ -169,7 +169,7 @@ export default function PrepModePage() {
         {/* Two-column grid on larger screens */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           {/* Last Session */}
-          <div className="bg-card rounded-lg p-4 border border-border/50">
+          <div className="premium-card p-4">
             <div className="flex items-center gap-2 mb-2">
               <Clock className="w-4 h-4 text-muted" />
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
@@ -183,7 +183,7 @@ export default function PrepModePage() {
           </div>
 
           {/* Open Items */}
-          <div className="bg-card rounded-lg p-4 border border-border/50">
+          <div className="premium-card p-4">
             <div className="flex items-center gap-2 mb-2">
               <ListChecks className="w-4 h-4 text-muted" />
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
@@ -219,10 +219,10 @@ export default function PrepModePage() {
         </div>
 
         {/* Your Question */}
-        <div className="bg-primary/10 border border-primary/30 rounded-lg p-4 mb-4">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="prep-question-card rounded-xl p-5 mb-4">
+          <div className="flex items-center gap-2 mb-3">
             <MessageCircleQuestion className="w-4 h-4 text-primary" />
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-primary">
+            <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-gradient">
               Your Question
             </h2>
           </div>
@@ -232,22 +232,22 @@ export default function PrepModePage() {
         </div>
 
         {/* Watch For */}
-        <div className="bg-card rounded-lg p-4 border border-border/50 mb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Eye className="w-4 h-4 text-muted" />
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+        <div className="prep-watch-card rounded-xl p-5 mb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Eye className="w-4 h-4 text-primary" />
+            <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-gradient">
               Watch For
             </h2>
           </div>
-          <p className="text-sm text-muted leading-relaxed">{prep.watch_for}</p>
+          <p className="text-sm text-foreground-secondary leading-relaxed">{prep.watch_for}</p>
         </div>
 
         {/* Contacts */}
         {contacts.length > 0 && (
-          <div className="bg-card rounded-lg p-4 border border-border/50">
+          <div className="premium-card p-4">
             <div className="flex items-center gap-2 mb-2">
               <Users className="w-4 h-4 text-muted" />
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+              <h2 className="section-title">
                 Contacts
               </h2>
             </div>
@@ -266,7 +266,7 @@ export default function PrepModePage() {
       </main>
 
       {/* Bottom link to full client detail */}
-      <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm border-t border-border px-4 py-3">
+      <div className="sticky bottom-0 bg-background/80 backdrop-blur-2xl px-4 py-3 header-gradient-border" style={{ borderBottom: 'none' }}>
         <div className="max-w-2xl mx-auto">
           <Link
             href={`/clients/${orgId}`}

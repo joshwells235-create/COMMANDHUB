@@ -85,18 +85,18 @@ export default function FocusView() {
   return (
     <div className="min-h-screen bg-background pb-16 lg:pb-0">
       {/* Header (sticky) */}
-      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-2xl header-gradient-border">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
           {/* Logo */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            <Zap className="w-5 h-5 text-primary" />
-            <h1 className="text-lg font-bold tracking-tight hidden sm:block">COMMAND HUB</h1>
+            <Zap className="w-5 h-5 text-primary pulse-alive" />
+            <h1 className="text-lg font-semibold tracking-tight hidden sm:block text-gradient">COMMAND HUB</h1>
           </div>
 
           {/* Ask Command Hub search bar */}
           <button
             onClick={() => setChatOpen(true)}
-            className="flex-1 flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2 hover:bg-card-hover transition-colors group max-w-md mx-auto"
+            className="flex-1 flex items-center gap-2 glass rounded-lg px-3 py-2 hover:border-primary/30 group max-w-md mx-auto"
           >
             <Search className="w-4 h-4 text-muted group-hover:text-primary transition-colors" />
             <span className="text-sm text-muted group-hover:text-foreground transition-colors">
@@ -117,7 +117,7 @@ export default function FocusView() {
             )}
             <button
               onClick={() => setShowQuickAdd(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white btn-gradient"
             >
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">Add</span>
@@ -130,11 +130,11 @@ export default function FocusView() {
       </header>
 
       {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 py-4">
+      <main className="max-w-7xl mx-auto px-4 py-4 animate-fade-in">
         {/* MOBILE LAYOUT */}
-        <div className="lg:hidden space-y-4">
+        <div className="lg:hidden space-y-4 stagger-children">
           {/* 1. Next Up Card */}
-          <div className="bg-card rounded-xl border border-border border-l-2 border-l-primary p-4">
+          <div className="bg-card rounded-xl border border-border next-up-border p-4 relative animated-gradient-border">
             <NextUpCard
               commitment={nextUp}
               onComplete={async (id) => { await completeCommitment(id); }}
@@ -143,22 +143,22 @@ export default function FocusView() {
           </div>
 
           {/* 2. Stats Bar */}
-          <div className="grid grid-cols-4 gap-2">
-            <button className="bg-card rounded-xl border border-border p-3 text-center">
-              <p className="text-2xl font-bold text-danger">{stats.overdue}</p>
-              <p className="text-xs text-muted">Overdue</p>
+          <div className="grid grid-cols-4 gap-2 stagger-children">
+            <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
+              <p className="text-2xl font-bold text-danger stat-number">{stats.overdue}</p>
+              <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Overdue</p>
             </button>
-            <button className="bg-card rounded-xl border border-border p-3 text-center">
-              <p className="text-2xl font-bold text-warning">{stats.dueToday}</p>
-              <p className="text-xs text-muted">Due Today</p>
+            <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
+              <p className="text-2xl font-bold text-warning stat-number">{stats.dueToday}</p>
+              <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Due Today</p>
             </button>
-            <button className="bg-card rounded-xl border border-border p-3 text-center">
-              <p className="text-2xl font-bold text-primary">{stats.thisWeek}</p>
-              <p className="text-xs text-muted">This Week</p>
+            <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
+              <p className="text-2xl font-bold text-primary stat-number">{stats.thisWeek}</p>
+              <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">This Week</p>
             </button>
-            <button className="bg-card rounded-xl border border-border p-3 text-center">
-              <p className="text-2xl font-bold text-orange-400">{stats.waitingOn}</p>
-              <p className="text-xs text-muted">Waiting On</p>
+            <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
+              <p className="text-2xl font-bold text-orange-400 stat-number">{stats.waitingOn}</p>
+              <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Waiting On</p>
             </button>
           </div>
 
@@ -207,10 +207,10 @@ export default function FocusView() {
         <div className="hidden lg:grid lg:grid-cols-5 gap-4">
           {/* Left column - "Your Day" */}
           <div className="lg:col-span-3 space-y-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Your Day</h2>
+            <h2 className="section-title">Your Day</h2>
 
             {/* Next Up Card (hero) */}
-            <div className="bg-card rounded-xl border border-border border-l-2 border-l-primary p-4">
+            <div className="bg-card rounded-xl border border-border next-up-border p-4 relative animated-gradient-border">
               <NextUpCard
                 commitment={nextUp}
                 onComplete={async (id) => { await completeCommitment(id); }}
@@ -243,24 +243,24 @@ export default function FocusView() {
 
           {/* Right column - "Intelligence" */}
           <div className="lg:col-span-2 space-y-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Intelligence</h2>
+            <h2 className="section-title">Intelligence</h2>
 
             {/* Stats Bar */}
-            <div className="grid grid-cols-4 gap-2">
-              <button className="bg-card rounded-xl border border-border p-3 text-center">
-                <p className="text-2xl font-bold text-danger">{stats.overdue}</p>
+            <div className="grid grid-cols-4 gap-2 stagger-children">
+              <button className="glass rounded-xl p-3 text-center group hover:glow">
+                <p className="text-2xl font-bold text-danger drop-shadow-[0_0_8px_rgba(244,63,94,0.3)]">{stats.overdue}</p>
                 <p className="text-xs text-muted">Overdue</p>
               </button>
-              <button className="bg-card rounded-xl border border-border p-3 text-center">
-                <p className="text-2xl font-bold text-warning">{stats.dueToday}</p>
+              <button className="glass rounded-xl p-3 text-center group hover:glow">
+                <p className="text-2xl font-bold text-warning drop-shadow-[0_0_8px_rgba(245,158,11,0.3)]">{stats.dueToday}</p>
                 <p className="text-xs text-muted">Due Today</p>
               </button>
-              <button className="bg-card rounded-xl border border-border p-3 text-center">
-                <p className="text-2xl font-bold text-primary">{stats.thisWeek}</p>
+              <button className="glass rounded-xl p-3 text-center group hover:glow">
+                <p className="text-2xl font-bold text-primary drop-shadow-[0_0_8px_rgba(99,102,241,0.3)]">{stats.thisWeek}</p>
                 <p className="text-xs text-muted">This Week</p>
               </button>
-              <button className="bg-card rounded-xl border border-border p-3 text-center">
-                <p className="text-2xl font-bold text-orange-400">{stats.waitingOn}</p>
+              <button className="glass rounded-xl p-3 text-center group hover:glow">
+                <p className="text-2xl font-bold text-orange-400 drop-shadow-[0_0_8px_rgba(251,146,60,0.3)]">{stats.waitingOn}</p>
                 <p className="text-xs text-muted">Waiting On</p>
               </button>
             </div>
@@ -287,7 +287,7 @@ export default function FocusView() {
       </main>
 
       {/* Mobile Footer (sticky tab bar) */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur-sm border-t border-border">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-background/80 backdrop-blur-2xl header-gradient-border" style={{ borderBottom: 'none' }}>
         <div className="flex items-center justify-around py-2 px-4">
           <Link href="/clients" className="flex flex-col items-center gap-0.5 px-3 py-1 text-muted hover:text-foreground transition-colors">
             <Users className="w-5 h-5" />

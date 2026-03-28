@@ -148,7 +148,7 @@ export default function ClientsPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
+      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur-2xl header-gradient-border">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
@@ -170,7 +170,7 @@ export default function ClientsPage() {
             </span>
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 text-xs font-medium bg-primary hover:bg-primary-hover text-white px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-xs font-medium text-white px-3 py-1.5 rounded-lg btn-gradient"
             >
               <Plus className="w-3.5 h-3.5" />
               Add Client
@@ -181,7 +181,7 @@ export default function ClientsPage() {
 
       {/* Main content */}
       <main className="max-w-4xl mx-auto px-4 py-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">
+        <h2 className="section-title mb-4">
           Client Intelligence
         </h2>
 
@@ -199,7 +199,7 @@ export default function ClientsPage() {
                 <Link
                   key={org.id}
                   href={`/clients/${org.id}`}
-                  className="bg-card rounded-lg p-4 hover:bg-card-hover transition-colors border border-border/50 block"
+                  className="premium-card p-4 block"
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2 min-w-0">
