@@ -78,7 +78,7 @@ export default function TranscriptsPage() {
         body: JSON.stringify({
           title: title || `${transcriptType} - ${transcriptDate}`,
           org_id: orgId,
-          engagement_id: engagement || null,
+          engagement_name: engagement || null,
           transcript_date: transcriptDate,
           transcript_type: transcriptType,
           participants: participants
@@ -89,7 +89,10 @@ export default function TranscriptsPage() {
         }),
       });
 
-      if (!createRes.ok) throw new Error('Failed to create transcript');
+      if (!createRes.ok) {
+        const errData = await createRes.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to create transcript');
+      }
       const createData = await createRes.json();
       const transcriptId = createData.transcript?.id || createData.id;
 
