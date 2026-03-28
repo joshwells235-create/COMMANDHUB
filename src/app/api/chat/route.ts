@@ -67,7 +67,8 @@ function detectIntent(message: string): {
     lower.includes('forget') ||
     lower.includes('commitments') ||
     lower.includes('to do') ||
-    lower.includes('todo');
+    lower.includes('todo') ||
+    lower.includes('personal');
 
   // Action intent keywords
   const actionKeywords = [
@@ -806,6 +807,7 @@ ${fallbackChunks.map((c: Record<string, unknown>) => {
     const systemPrompt = `You are Command Hub, Josh Wells's AI chief of staff at LeadShift.
 Josh is a leadership development consultant who does sales, coaching, consulting, facilitating, training, and advising for executives and organizations.
 You have access to Josh's commitments, calendar, client data, and transcript history. Answer conversationally but concisely.
+Josh also uses Command Hub for personal commitments and transcripts. These have category='personal' and may relate to health, family, finance, home, etc. Handle these naturally — don't try to fit them into a client context.
 
 Today's date: ${todayStr}
 

@@ -26,11 +26,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Transcript not found' }, { status: 404 });
     }
 
-    // 2. Fetch contacts for context
-    const { data: contacts } = await supabase
-      .from('contacts')
-      .select('name, role')
-      .eq('org_id', transcript.org_id);
+    // 2. Determine if this is a personal or business transcript
+    const isPersonal = transcript.category === 'personal' || (!transcript.org_id && !transcript.engagement_id);
+
+    // 3. Fetch contacts for context (business transcripts only)
+    const { data: contacts } = transcript.org_id
+      ? await supabase.from('contacts').select('name, role').eq('org_id', transcript.org_id)
+      : { data: null };
 
     const orgName = (transcript.organizations as { name: string } | null)?.name || 'Unknown';
     const engagement = transcript.engagements as { name: string; type: string | null } | null;
@@ -40,16 +42,10 @@ export async function POST(request: NextRequest) {
       ? transcript.participants.map((p: { name?: string; role?: string }) => `${p.name || 'Unknown'}${p.role ? ` (${p.role})` : ''}`).join(', ')
       : 'Not specified';
     const transcriptDate = transcript.transcript_date || 'Unknown';
+    const personalArea = (transcript.metadata as Record<string, unknown>)?.personal_area || null;
 
-    // 3. Call Claude for analysis
-    const client = new Anthropic();
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      messages: [
-        {
-          role: 'user',
-          content: `You are analyzing a transcript from Josh Wells's consulting practice.
+    // 4. Build the appropriate analysis prompt based on category
+    const businessPrompt = `You are analyzing a transcript from Josh Wells's consulting practice.
 Josh is a leadership development consultant who uses frameworks including
 Language Leaks (Avatar vs Source Code, Agency/Identity/Worth lenses),
 the Signal Model (antenna/frequency metaphor), Predictive Index behavioral
@@ -107,7 +103,64 @@ Analyze and return JSON only (no markdown code blocks):
       "speaker": "who said it"
     }
   ]
-}`,
+}`;
+
+    const personalPrompt = `You are analyzing a personal transcript for Josh Wells.
+This is NOT a client or business conversation — it's a personal one${personalArea ? ` related to ${personalArea}` : ''}.
+Examples: doctor visit, contractor discussion, family conversation, personal finance meeting, etc.
+
+Date: ${transcriptDate}
+Participants: ${participants}
+
+TRANSCRIPT:
+${transcript.raw_text}
+
+Analyze and return JSON only (no markdown code blocks):
+{
+  "summary": "3-5 sentence summary of the conversation. What was discussed, what decisions were made, what follow-ups are needed.",
+  "key_themes": [
+    {
+      "theme": "theme name",
+      "category": "health|family|finance|home|social|legal|travel|personal_development|other",
+      "description": "brief description of how this theme showed up"
+    }
+  ],
+  "commitments": [
+    {
+      "title": "action item starting with verb (e.g. call dentist, schedule contractor, review insurance docs)",
+      "description": "context",
+      "commitment_type": "promise_made|ask_received|follow_up|waiting_on|deliverable|prep",
+      "owner": "josh|other",
+      "other_party": "name if applicable",
+      "suggested_due": "ISO date or null",
+      "source_quote": "relevant quote from transcript"
+    }
+  ],
+  "personal_notes": {
+    "key_takeaways": "The most important information or decisions from this conversation",
+    "things_to_remember": "Details Josh should remember (medication names, measurements, prices, dates, etc.)",
+    "follow_up_needed": "What needs to happen next and who needs to do it",
+    "concerns_or_flags": "Anything that seemed concerning or worth monitoring"
+  },
+  "session_arc": "What was the main purpose of this conversation and what was resolved vs. left open?",
+  "notable_quotes": [
+    {
+      "quote": "exact quote",
+      "context": "why this quote matters",
+      "speaker": "who said it"
+    }
+  ]
+}`;
+
+    // 5. Call Claude for analysis
+    const client = new Anthropic();
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: isPersonal ? personalPrompt : businessPrompt,
         },
       ],
     });
@@ -124,16 +177,18 @@ Analyze and return JSON only (no markdown code blocks):
     }
     const extraction = JSON.parse(jsonStr);
 
-    // 5. Session comparison: fetch prior sessions for the same org
+    // 5. Session comparison: fetch prior sessions for the same org (business only)
     let sessionComparison = null;
-    const { data: priorTranscripts } = await supabase
-      .from('transcripts')
-      .select('id, transcript_date, summary, key_themes, client_insights, ai_extraction')
-      .eq('org_id', transcript.org_id)
-      .neq('id', transcript_id)
-      .not('ai_extraction', 'is', null)
-      .order('transcript_date', { ascending: false })
-      .limit(3);
+    const { data: priorTranscripts } = !isPersonal && transcript.org_id
+      ? await supabase
+          .from('transcripts')
+          .select('id, transcript_date, summary, key_themes, client_insights, ai_extraction')
+          .eq('org_id', transcript.org_id)
+          .neq('id', transcript_id)
+          .not('ai_extraction', 'is', null)
+          .order('transcript_date', { ascending: false })
+          .limit(3)
+      : { data: null };
 
     if (priorTranscripts && priorTranscripts.length > 0) {
       const priorSessionsSummary = priorTranscripts.map((pt) => ({
@@ -227,7 +282,7 @@ Compare the current session against the prior sessions. Return JSON only (no mar
       .update({
         summary: extraction.summary,
         key_themes: extraction.key_themes,
-        client_insights: extraction.client_insights,
+        client_insights: isPersonal ? extraction.personal_notes : extraction.client_insights,
         session_arc: extraction.session_arc,
         notable_quotes: extraction.notable_quotes,
         ai_extraction: extraction,
@@ -279,6 +334,7 @@ Compare the current session against the prior sessions. Return JSON only (no mar
           title: c.title,
           description: c.description || null,
           commitment_type: c.commitment_type,
+          category: isPersonal ? 'personal' : 'business',
           org_id: transcript.org_id,
           engagement_id: transcript.engagement_id,
           owner: c.owner || 'josh',

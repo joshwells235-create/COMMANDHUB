@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || 'pending,in_progress';
     const orgId = searchParams.get('org_id');
     const owner = searchParams.get('owner');
+    const category = searchParams.get('category');
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
     const statusList = status.split(',').map((s) => s.trim());
@@ -27,6 +28,10 @@ export async function GET(request: NextRequest) {
 
     if (owner) {
       query = query.eq('owner', owner);
+    }
+
+    if (category) {
+      query = query.eq('category', category);
     }
 
     const { data, error } = await query;
@@ -64,6 +69,7 @@ export async function POST(request: NextRequest) {
         title: body.title,
         description: body.description ?? null,
         commitment_type: body.commitment_type,
+        category: body.category ?? 'business',
         org_id: body.org_id ?? null,
         contact_id: body.contact_id ?? null,
         engagement_id: body.engagement_id ?? null,

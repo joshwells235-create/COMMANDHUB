@@ -29,6 +29,9 @@ export function WaitingOnList({ commitments, onReceived }: WaitingOnListProps) {
               <Clock className="w-4 h-4 text-orange-400 flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm leading-tight">
+                  {c.category === 'personal' && (
+                    <span className="inline-block px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 text-[10px] font-medium uppercase tracking-wide mr-1.5 align-middle">Personal</span>
+                  )}
                   <span className="font-medium">{c.other_party || 'Someone'}</span>
                   <span className="text-muted">: {c.title}</span>
                 </p>

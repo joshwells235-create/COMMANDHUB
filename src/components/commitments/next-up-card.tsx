@@ -42,6 +42,9 @@ export function NextUpCard({ commitment, onComplete, onSnooze }: NextUpCardProps
         <h3 className="text-lg font-semibold leading-tight">{commitment.title}</h3>
 
         <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
+          {commitment.category === 'personal' && (
+            <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 text-[11px] font-medium uppercase tracking-wide">Personal</span>
+          )}
           {commitment.organization && (
             <span className="text-muted">{commitment.organization.name}</span>
           )}
