@@ -17,7 +17,7 @@ export type CommitmentStatus =
   | 'cancelled';
 
 export type StrategicValue = 'strategic' | 'standard' | 'emerging';
-export type OrgStatus = 'active' | 'paused' | 'completed' | 'prospect';
+export type OrgStatus = 'active' | 'paused' | 'completed' | 'prospect' | 'partner';
 
 export interface Organization {
   id: string;

@@ -239,6 +239,7 @@ export default function ClientDetailPage() {
     active: 'bg-success/20 text-success',
     paused: 'bg-warning/20 text-warning',
     prospect: 'bg-primary/20 text-primary',
+    partner: 'bg-violet-500/20 text-violet-400',
     completed: 'bg-muted/20 text-muted',
   };
 
@@ -323,6 +324,7 @@ export default function ClientDetailPage() {
                   >
                     <option value="active">Active</option>
                     <option value="prospect">Prospect</option>
+                    <option value="partner">Partner</option>
                     <option value="paused">Paused</option>
                     <option value="completed">Completed</option>
                   </select>

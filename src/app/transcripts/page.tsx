@@ -9,6 +9,7 @@ const TRANSCRIPT_TYPES = [
   { value: 'coaching_session', label: 'Coaching / 1:1 Session' },
   { value: 'workshop', label: 'Workshop' },
   { value: 'client_meeting', label: 'Client Meeting' },
+  { value: 'partnership_meeting', label: 'Partnership Meeting' },
   { value: 'internal', label: 'Internal' },
   { value: 'vistage', label: 'Vistage' },
   { value: 'other', label: 'Other' },

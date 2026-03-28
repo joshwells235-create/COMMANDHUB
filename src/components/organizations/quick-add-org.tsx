@@ -13,6 +13,7 @@ interface QuickAddOrgProps {
 const STATUS_OPTIONS: { value: OrgStatus; label: string }[] = [
   { value: 'active', label: 'Active' },
   { value: 'prospect', label: 'Prospect' },
+  { value: 'partner', label: 'Partner' },
   { value: 'paused', label: 'Paused' },
 ];
 

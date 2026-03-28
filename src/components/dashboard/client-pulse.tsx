@@ -28,7 +28,7 @@ export function ClientPulse() {
         const commitments: Commitment[] = await commitmentsRes.json();
 
         const now = new Date();
-        const activeOrgs = orgs.filter((o) => o.status === 'active');
+        const activeOrgs = orgs.filter((o) => o.status === 'active' || o.status === 'partner');
 
         const result: OrgPulse[] = activeOrgs.map((org) => {
           const orgCommitments = commitments.filter((c) => c.org_id === org.id);

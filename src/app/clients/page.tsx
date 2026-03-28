@@ -126,6 +126,7 @@ export default function ClientsPage() {
     active: 'bg-success/20 text-success',
     paused: 'bg-warning/20 text-warning',
     prospect: 'bg-primary/20 text-primary',
+    partner: 'bg-violet-500/20 text-violet-400',
     completed: 'bg-muted/20 text-muted',
   };
 
