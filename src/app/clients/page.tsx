@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Zap,
@@ -10,9 +10,11 @@ import {
   TrendingUp,
   CheckCircle2,
   Calendar,
+  Plus,
 } from 'lucide-react';
 import type { Organization, Commitment } from '@/types/database';
 import { cn } from '@/lib/utils';
+import { QuickAddOrg } from '@/components/organizations/quick-add-org';
 
 interface OrgCardData {
   org: Organization;
@@ -23,61 +25,62 @@ interface OrgCardData {
 export default function ClientsPage() {
   const [orgCards, setOrgCards] = useState<OrgCardData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [orgsRes, commitmentsRes, eventsRes] = await Promise.all([
+        fetch('/api/organizations'),
+        fetch('/api/commitments?status=pending,in_progress,waiting,snoozed&limit=200'),
+        fetch('/api/calendar'),
+      ]);
+
+      const orgs: Organization[] = await orgsRes.json();
+      const commitments: Commitment[] = commitmentsRes.ok
+        ? await commitmentsRes.json()
+        : [];
+      const eventsData = eventsRes.ok ? await eventsRes.json() : [];
+      const events = Array.isArray(eventsData)
+        ? eventsData
+        : eventsData.events || [];
+
+      const now = new Date();
+
+      const cards: OrgCardData[] = orgs.map((org) => {
+        const orgCommitments = commitments.filter(
+          (c) => c.org_id === org.id
+        );
+        const orgEvents = events.filter(
+          (e: { org_id: string | null; start_time: string }) =>
+            e.org_id === org.id && new Date(e.start_time) > now
+        );
+        const nextEvent =
+          orgEvents.length > 0
+            ? orgEvents.sort(
+                (a: { start_time: string }, b: { start_time: string }) =>
+                  new Date(a.start_time).getTime() -
+                  new Date(b.start_time).getTime()
+              )[0]
+            : null;
+
+        return {
+          org,
+          activeCommitmentCount: orgCommitments.length,
+          nextEventDate: nextEvent ? nextEvent.start_time : null,
+        };
+      });
+
+      setOrgCards(cards);
+    } catch (err) {
+      console.error('Failed to load client data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const [orgsRes, commitmentsRes, eventsRes] = await Promise.all([
-          fetch('/api/organizations'),
-          fetch('/api/commitments?status=pending,in_progress,waiting,snoozed&limit=200'),
-          fetch('/api/calendar'),
-        ]);
-
-        const orgs: Organization[] = await orgsRes.json();
-        const commitments: Commitment[] = commitmentsRes.ok
-          ? await commitmentsRes.json()
-          : [];
-        const eventsData = eventsRes.ok ? await eventsRes.json() : [];
-        const events = Array.isArray(eventsData)
-          ? eventsData
-          : eventsData.events || [];
-
-        const now = new Date();
-
-        const cards: OrgCardData[] = orgs.map((org) => {
-          const orgCommitments = commitments.filter(
-            (c) => c.org_id === org.id
-          );
-          const orgEvents = events.filter(
-            (e: { org_id: string | null; start_time: string }) =>
-              e.org_id === org.id && new Date(e.start_time) > now
-          );
-          const nextEvent =
-            orgEvents.length > 0
-              ? orgEvents.sort(
-                  (a: { start_time: string }, b: { start_time: string }) =>
-                    new Date(a.start_time).getTime() -
-                    new Date(b.start_time).getTime()
-                )[0]
-              : null;
-
-          return {
-            org,
-            activeCommitmentCount: orgCommitments.length,
-            nextEventDate: nextEvent ? nextEvent.start_time : null,
-          };
-        });
-
-        setOrgCards(cards);
-      } catch (err) {
-        console.error('Failed to load client data:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const statusColor: Record<string, string> = {
     active: 'bg-success/20 text-success',
@@ -121,9 +124,18 @@ export default function ClientsPage() {
               </h1>
             </div>
           </div>
-          <span className="text-sm text-muted">
-            {orgCards.length} clients
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted">
+              {orgCards.length} clients
+            </span>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 text-xs font-medium bg-primary hover:bg-primary-hover text-white px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Client
+            </button>
+          </div>
         </div>
       </header>
 
@@ -214,6 +226,12 @@ export default function ClientsPage() {
           </div>
         )}
       </main>
+
+      <QuickAddOrg
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSuccess={fetchData}
+      />
     </div>
   );
 }

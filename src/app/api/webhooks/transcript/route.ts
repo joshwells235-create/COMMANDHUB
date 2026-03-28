@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { autoDetectOrganization } from '@/lib/auto-detect-org';
+import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -103,8 +105,14 @@ export async function POST(request: NextRequest) {
       title ||
       `${source.charAt(0).toUpperCase() + source.slice(1)} transcript – ${new Date(date || Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
-    // ---- Fuzzy org / contact matching ----
-    const orgId = await matchOrganization(supabase, resolvedTitle, participants);
+    // ---- Fuzzy org / contact matching (auto-creates if needed) ----
+    const orgId = await matchOrCreateOrganization(
+      supabase,
+      resolvedTitle,
+      transcript_text,
+      source,
+      participants
+    );
 
     // ---- Normalise participants into the shape the DB expects ----
     const participantRecords = Array.isArray(participants)
@@ -174,11 +182,13 @@ export async function POST(request: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
-// Fuzzy organisation matching
+// Fuzzy organisation matching – auto-creates org + contacts when no match
 // ---------------------------------------------------------------------------
-async function matchOrganization(
+async function matchOrCreateOrganization(
   supabase: ReturnType<typeof createServerClient>,
   title: string,
+  transcriptText: string,
+  source: string,
   participants?: string[]
 ): Promise<string | null> {
   try {
@@ -236,9 +246,144 @@ async function matchOrganization(
       }
     }
 
+    // 3. No match found – use Claude to extract org info and auto-create
+    const claudeOrgId = await extractAndCreateOrganization(supabase, title, transcriptText, source);
+    if (claudeOrgId) return claudeOrgId;
+
+    // 4. Claude-based detection also failed – try auto-detect from participant emails
+    if (participants && participants.length > 0) {
+      for (const participant of participants) {
+        // Participants may be strings like "Name <email>" or just email addresses
+        const raw = typeof participant === 'string' ? participant : '';
+        const emailMatch = raw.match(/<([^>]+@[^>]+)>/) || raw.match(/([^\s]+@[^\s]+)/);
+        if (!emailMatch) continue;
+
+        const email = emailMatch[1];
+        // Derive a display name: text before the <email>, or the local part
+        const namePart = raw.replace(/<[^>]+>/, '').trim();
+        const displayName = namePart || email.split('@')[0];
+
+        const result = await autoDetectOrganization(displayName, email, title, transcriptText.slice(0, 200));
+        if (result) return result.org_id;
+      }
+    }
+
     return null;
   } catch (error) {
     console.error('Error during org matching:', error);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Use Claude to extract org details from transcript, then create records
+// ---------------------------------------------------------------------------
+async function extractAndCreateOrganization(
+  supabase: ReturnType<typeof createServerClient>,
+  title: string,
+  transcriptText: string,
+  source: string
+): Promise<string | null> {
+  try {
+    const anthropic = new Anthropic();
+
+    // Use the title and first ~500 words of the transcript for context
+    const words = transcriptText.split(/\s+/);
+    const opening = words.slice(0, 500).join(' ');
+
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      messages: [
+        {
+          role: 'user',
+          content: `Analyze this meeting transcript title and opening text. Extract information about the external organization or prospect being met with.
+
+Title: ${title}
+
+Transcript opening:
+${opening}
+
+Return ONLY valid JSON (no markdown fences) with this structure:
+{
+  "org_name": "Name of the external organization/prospect, or null if this is an internal meeting",
+  "industry": "Industry if detectable, or null",
+  "contact_names": ["List of external participant names mentioned"],
+  "meeting_type": "e.g. sales, discovery, check-in, onboarding, internal, etc."
+}
+
+If this appears to be an internal team meeting with no external organization, set org_name to null.`,
+        },
+      ],
+    });
+
+    // Parse the Claude response
+    const responseText =
+      message.content[0].type === 'text' ? message.content[0].text : '';
+    let extracted: {
+      org_name: string | null;
+      industry: string | null;
+      contact_names: string[];
+      meeting_type: string | null;
+    };
+
+    try {
+      extracted = JSON.parse(responseText);
+    } catch {
+      console.error('Failed to parse Claude extraction response:', responseText);
+      return null;
+    }
+
+    // If Claude couldn't identify an org (e.g. internal meeting), return null
+    if (!extracted.org_name) {
+      return null;
+    }
+
+    // Create the new organization
+    const today = new Date().toISOString().split('T')[0];
+    const { data: newOrg, error: orgError } = await supabase
+      .from('organizations')
+      .insert({
+        name: extracted.org_name,
+        industry: extracted.industry || null,
+        status: 'prospect',
+        strategic_value: 'emerging',
+        notes: `Auto-created from ${source} transcript on ${today}`,
+      })
+      .select('id')
+      .single();
+
+    if (orgError || !newOrg) {
+      console.error('Error creating organization:', orgError);
+      return null;
+    }
+
+    // Create contact records for identified participants
+    if (extracted.contact_names && extracted.contact_names.length > 0) {
+      const contactRecords = extracted.contact_names.map((name) => ({
+        name,
+        org_id: newOrg.id,
+        relationship_type: 'prospect',
+        notes: `Auto-created from ${source} transcript on ${today}`,
+      }));
+
+      const { error: contactError } = await supabase
+        .from('contacts')
+        .insert(contactRecords);
+
+      if (contactError) {
+        console.error('Error creating contacts:', contactError);
+        // Non-fatal – the org was still created
+      }
+    }
+
+    console.log(
+      `Auto-created organization "${extracted.org_name}" (${newOrg.id}) with ${extracted.contact_names?.length || 0} contacts`
+    );
+
+    return newOrg.id;
+  } catch (error) {
+    console.error('Error in Claude extraction / org creation:', error);
     return null;
   }
 }
