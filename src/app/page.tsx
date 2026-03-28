@@ -106,14 +106,29 @@ export default function FocusView() {
 
           {/* Right actions */}
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Desktop nav links */}
+            <nav className="hidden lg:flex items-center gap-1 mr-2">
+              <Link href="/clients" className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-muted hover:text-foreground transition-colors rounded-md hover:bg-card">
+                <Users className="w-4 h-4" />
+                Clients
+              </Link>
+              <Link href="/transcripts" className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-muted hover:text-foreground transition-colors rounded-md hover:bg-card">
+                <FileText className="w-4 h-4" />
+                Transcripts
+              </Link>
+              <Link href="/follow-ups" className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-muted hover:text-foreground transition-colors rounded-md hover:bg-card">
+                <PhoneForwarded className="w-4 h-4" />
+                Follow-ups
+              </Link>
+            </nav>
             {reviewEmails.length > 0 && (
-              <a
+              <Link
                 href="/review"
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-warning/20 text-warning rounded-lg text-sm font-medium hover:bg-warning/30 transition-colors"
               >
                 <Inbox className="w-4 h-4" />
                 <span>{reviewEmails.length}</span>
-              </a>
+              </Link>
             )}
             <button
               onClick={() => setShowQuickAdd(true)}
