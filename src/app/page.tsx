@@ -17,6 +17,7 @@ import { NeedsReplySection } from '@/components/review/needs-reply-section';
 import { CommandHubChat } from '@/components/chat/command-hub-chat';
 import { ClientPulse } from '@/components/dashboard/client-pulse';
 import { RelationshipHealth } from '@/components/dashboard/relationship-health';
+import { LifecycleTracker } from '@/components/dashboard/lifecycle-tracker';
 import { PracticeIntelligence } from '@/components/dashboard/practice-intelligence';
 import { isToday, isThisWeek } from 'date-fns';
 
@@ -211,6 +212,9 @@ export default function FocusView() {
 
             {/* Relationship Health */}
             <RelationshipHealth />
+
+            {/* Engagement Lifecycle */}
+            <LifecycleTracker />
 
             {/* Client Pulse */}
             <ClientPulse />

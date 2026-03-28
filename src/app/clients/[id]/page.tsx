@@ -326,8 +326,15 @@ export default function ClientDetailPage() {
           })()}
         </div>
 
-        {/* Generate Briefing Button */}
+        {/* Prep Mode + Generate Briefing Buttons */}
         <div>
+          <Link
+            href={`/prep/${orgId}`}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-500/20 text-amber-400 rounded-lg font-medium text-sm hover:bg-amber-500/30 transition-colors mb-2"
+          >
+            <Zap className="w-4 h-4" />
+            Prep Mode
+          </Link>
           <button
             onClick={generateBriefing}
             disabled={briefingLoading}
