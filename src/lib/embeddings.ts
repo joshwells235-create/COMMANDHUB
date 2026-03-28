@@ -1,10 +1,11 @@
 /**
- * Text chunking and OpenAI embedding utilities for the RAG pipeline.
+ * Text chunking utilities for the transcript pipeline.
+ * Search uses PostgreSQL full-text search (pg_trgm) instead of vector embeddings.
  */
 
 /**
  * Split text into overlapping chunks of approximate token size.
- * Uses sentence boundaries (period + space) to avoid splitting mid-sentence.
+ * Uses sentence boundaries to avoid splitting mid-sentence.
  */
 export function chunkText(
   text: string,
@@ -45,62 +46,4 @@ export function chunkText(
   }
 
   return chunks;
-}
-
-/**
- * Generate a single embedding vector via OpenAI text-embedding-3-small.
- * Returns a 1536-dimensional float array.
- */
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'text-embedding-3-small',
-      input: text,
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenAI embedding API error: ${response.status} ${err}`);
-  }
-
-  const data = await response.json();
-  return data.data[0].embedding;
-}
-
-/**
- * Generate embeddings for multiple texts in a single API call.
- * Returns an array of 1536-dimensional float arrays, one per input text.
- */
-export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
-  if (texts.length === 0) return [];
-
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'text-embedding-3-small',
-      input: texts,
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenAI embedding API error: ${response.status} ${err}`);
-  }
-
-  const data = await response.json();
-  // API returns data sorted by index, but sort explicitly to be safe
-  const sorted = data.data.sort(
-    (a: { index: number }, b: { index: number }) => a.index - b.index
-  );
-  return sorted.map((item: { embedding: number[] }) => item.embedding);
 }

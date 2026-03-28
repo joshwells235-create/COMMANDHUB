@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
-import { chunkText, generateEmbeddings } from '@/lib/embeddings';
+import { chunkText } from '@/lib/embeddings';
 import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
@@ -141,16 +141,12 @@ Analyze and return JSON only (no markdown code blocks):
     // 6. Chunk the raw text
     const chunks = chunkText(transcript.raw_text);
 
-    // 7. Generate embeddings for all chunks
-    const embeddings = await generateEmbeddings(chunks);
-
-    // 8. Insert chunks into transcript_chunks
+    // 7. Insert chunks into transcript_chunks (no embeddings - using full-text search)
     const chunkRecords = chunks.map((content, index) => ({
       transcript_id,
       org_id: transcript.org_id,
       chunk_index: index,
       content,
-      embedding: JSON.stringify(embeddings[index]),
       metadata: {
         transcript_date: transcript.transcript_date,
         transcript_type: transcript.transcript_type,

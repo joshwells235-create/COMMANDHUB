@@ -2,8 +2,7 @@
 -- Full database schema
 
 -- Enable extensions
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pg_trgm; -- for text search
 
 -- Organizations: the billing/relationship entity
 CREATE TABLE organizations (
@@ -137,7 +136,6 @@ CREATE TABLE transcript_chunks (
   org_id UUID REFERENCES organizations(id),
   chunk_index INTEGER,
   content TEXT NOT NULL,
-  embedding vector(1536),
   metadata JSONB,
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -182,7 +180,8 @@ CREATE INDEX idx_commitments_owner ON commitments(owner);
 CREATE INDEX idx_calendar_start ON calendar_events(start_time);
 CREATE INDEX idx_emails_received ON emails(received_at);
 CREATE INDEX idx_emails_review ON emails(review_status) WHERE review_status = 'pending';
-CREATE INDEX idx_chunks_embedding ON transcript_chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX idx_chunks_content_trgm ON transcript_chunks USING gin (content gin_trgm_ops);
+CREATE INDEX idx_chunks_content_fts ON transcript_chunks USING gin (to_tsvector('english', content));
 CREATE INDEX idx_chunks_org ON transcript_chunks(org_id);
 CREATE INDEX idx_activity_commitment ON commitment_activity(commitment_id);
 
@@ -291,11 +290,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- RAG SEARCH: Vector similarity search across transcript chunks
+-- TEXT SEARCH: Full-text + trigram search across transcript chunks
 -- ============================================================
-CREATE OR REPLACE FUNCTION search_transcript_chunks(
-  query_embedding vector(1536),
-  match_threshold float DEFAULT 0.5,
+CREATE OR REPLACE FUNCTION search_transcript_chunks_text(
+  search_query text,
   match_count int DEFAULT 10,
   filter_org_id uuid DEFAULT NULL
 )
@@ -318,7 +316,7 @@ BEGIN
     tc.id,
     tc.content,
     tc.metadata,
-    (1 - (tc.embedding <=> query_embedding))::float as similarity,
+    ts_rank(to_tsvector('english', tc.content), websearch_to_tsquery('english', search_query))::float as similarity,
     t.id as transcript_id,
     t.title as transcript_title,
     t.transcript_date,
@@ -328,8 +326,11 @@ BEGIN
   JOIN transcripts t ON tc.transcript_id = t.id
   LEFT JOIN organizations o ON tc.org_id = o.id
   WHERE (filter_org_id IS NULL OR tc.org_id = filter_org_id)
-    AND 1 - (tc.embedding <=> query_embedding) > match_threshold
-  ORDER BY tc.embedding <=> query_embedding
+    AND (
+      to_tsvector('english', tc.content) @@ websearch_to_tsquery('english', search_query)
+      OR tc.content ILIKE '%' || search_query || '%'
+    )
+  ORDER BY similarity DESC
   LIMIT match_count;
 END;
 $$;

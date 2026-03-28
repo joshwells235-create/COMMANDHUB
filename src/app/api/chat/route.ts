@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
-import { generateEmbedding } from '@/lib/embeddings';
 import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
@@ -159,28 +158,53 @@ ${orgs.map((o) => `- ${o.name} (${o.strategic_value}, ${o.industry || 'no indust
       );
     }
 
-    // RAG search for transcript-related queries
+    // Text search for transcript-related queries
     let ragContext = '';
     if (needsRAG(message)) {
       try {
-        const queryEmbedding = await generateEmbedding(message);
-        const { data: chunks } = await supabase.rpc('search_transcript_chunks', {
-          query_embedding: JSON.stringify(queryEmbedding),
-          match_threshold: 0.5,
-          match_count: 5,
-        });
+        // Extract key words for search
+        const searchWords = message
+          .toLowerCase()
+          .replace(/[^\w\s]/g, '')
+          .split(/\s+/)
+          .filter((w) => w.length > 3)
+          .slice(0, 5)
+          .join(' | ');
+
+        const { data: chunks } = await supabase
+          .from('transcript_chunks')
+          .select('content, metadata, transcript_id, transcripts(title, transcript_date, organizations(name))')
+          .textSearch('content', searchWords, { type: 'websearch', config: 'english' })
+          .limit(5);
 
         if (chunks && chunks.length > 0) {
-          ragContext = `\nTRANSCRIPT CONTEXT (from RAG search):
+          ragContext = `\nTRANSCRIPT CONTEXT (from search):
 ${chunks
-  .map(
-    (c: { content: string; transcript_title: string; transcript_date: string; org_name: string }) =>
-      `[${c.transcript_title}, ${c.transcript_date}, ${c.org_name}]: ${c.content.substring(0, 300)}`
-  )
+  .map((c: Record<string, unknown>) => {
+    const transcripts = c.transcripts as Record<string, unknown>[] | Record<string, unknown> | null;
+    const t = Array.isArray(transcripts) ? transcripts[0] : transcripts;
+    const orgs = t?.organizations as Record<string, unknown>[] | null;
+    return `[${t?.title || 'Unknown'}, ${t?.transcript_date || 'Unknown'}, ${orgs?.[0]?.name || 'Unknown'}]: ${(c.content as string).substring(0, 300)}`;
+  })
   .join('\n\n')}`;
+        } else {
+          // Fallback to ILIKE search
+          const { data: fallbackChunks } = await supabase
+            .from('transcript_chunks')
+            .select('content, metadata')
+            .ilike('content', `%${message.split(' ').slice(0, 3).join('%')}%`)
+            .limit(5);
+
+          if (fallbackChunks && fallbackChunks.length > 0) {
+            ragContext = `\nTRANSCRIPT CONTEXT:
+${fallbackChunks.map((c: Record<string, unknown>) => {
+  const meta = c.metadata as Record<string, string> | null;
+  return `[${meta?.org_name || 'Unknown'}, ${meta?.transcript_date || 'Unknown'}]: ${(c.content as string).substring(0, 300)}`;
+}).join('\n\n')}`;
+          }
         }
       } catch (err) {
-        console.error('RAG search failed (non-fatal):', err);
+        console.error('Transcript search failed (non-fatal):', err);
       }
     }
 
