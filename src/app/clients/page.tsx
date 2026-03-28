@@ -16,6 +16,30 @@ import type { Organization, Commitment } from '@/types/database';
 import { cn } from '@/lib/utils';
 import { QuickAddOrg } from '@/components/organizations/quick-add-org';
 
+type LifecycleStage =
+  | 'prospecting'
+  | 'onboarding'
+  | 'building_trust'
+  | 'deep_work'
+  | 'sustaining'
+  | 'winding_down'
+  | 'at_risk';
+
+interface OrgLifecycleData {
+  org_id: string;
+  stage: LifecycleStage;
+}
+
+const lifecycleBadgeConfig: Record<LifecycleStage, { label: string; className: string }> = {
+  prospecting: { label: 'Prospecting', className: 'bg-gray-400/20 text-gray-400' },
+  onboarding: { label: 'Onboarding', className: 'bg-blue-500/20 text-blue-400' },
+  building_trust: { label: 'Building Trust', className: 'bg-cyan-500/20 text-cyan-400' },
+  deep_work: { label: 'Deep Work', className: 'bg-green-500/20 text-green-400' },
+  sustaining: { label: 'Sustaining', className: 'bg-amber-500/20 text-amber-400' },
+  winding_down: { label: 'Winding Down', className: 'bg-orange-500/20 text-orange-400' },
+  at_risk: { label: 'At Risk', className: 'bg-red-500/20 text-red-400' },
+};
+
 interface OrgCardData {
   org: Organization;
   activeCommitmentCount: number;
@@ -26,6 +50,7 @@ export default function ClientsPage() {
   const [orgCards, setOrgCards] = useState<OrgCardData[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [lifecycleMap, setLifecycleMap] = useState<Record<string, LifecycleStage>>({});
 
   const fetchData = useCallback(async () => {
     try {
@@ -71,6 +96,21 @@ export default function ClientsPage() {
       });
 
       setOrgCards(cards);
+
+      // Fetch lifecycle data
+      try {
+        const lifecycleRes = await fetch('/api/ai/lifecycle');
+        if (lifecycleRes.ok) {
+          const lifecycleData: OrgLifecycleData[] = await lifecycleRes.json();
+          const map: Record<string, LifecycleStage> = {};
+          for (const item of lifecycleData) {
+            map[item.org_id] = item.stage;
+          }
+          setLifecycleMap(map);
+        }
+      } catch {
+        // Lifecycle badges are non-critical, fail silently
+      }
     } catch (err) {
       console.error('Failed to load client data:', err);
     } finally {
@@ -167,6 +207,16 @@ export default function ClientsPage() {
                       <h3 className="font-semibold text-foreground truncate">
                         {org.name}
                       </h3>
+                      {lifecycleMap[org.id] && (
+                        <span
+                          className={cn(
+                            'text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0',
+                            lifecycleBadgeConfig[lifecycleMap[org.id]].className
+                          )}
+                        >
+                          {lifecycleBadgeConfig[lifecycleMap[org.id]].label}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {StrategicIcon && (
