@@ -4,9 +4,16 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Send, MessageSquare, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+interface ActionTaken {
+  type: string;
+  success: boolean;
+  details: string;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  actions?: ActionTaken[];
 }
 
 interface CommandHubChatProps {
@@ -15,10 +22,12 @@ interface CommandHubChatProps {
 }
 
 const SUGGESTED_PROMPTS = [
-  "What's my week look like?",
-  "What am I forgetting?",
   "What should I do next?",
-  "Summarize my last session with...",
+  "Who needs my attention?",
+  "Draft a check-in to...",
+  "Snooze the MMG follow-up",
+  "Prep me for my next meeting",
+  "What am I forgetting?",
 ];
 
 function formatMessage(content: string) {
@@ -110,7 +119,11 @@ export function CommandHubChat({ isOpen, onClose }: CommandHubChatProps) {
       if (!res.ok) throw new Error('Chat request failed');
 
       const data = await res.json();
-      setMessages([...updatedMessages, { role: 'assistant', content: data.response }]);
+      setMessages([...updatedMessages, {
+        role: 'assistant',
+        content: data.message || data.response,
+        actions: data.actions_taken,
+      }]);
     } catch (err) {
       console.error('Chat error:', err);
       setMessages([
@@ -196,7 +209,27 @@ export function CommandHubChat({ isOpen, onClose }: CommandHubChatProps) {
               )}
             >
               {msg.role === 'assistant' ? (
-                <div className="leading-relaxed">{formatMessage(msg.content)}</div>
+                <div className="leading-relaxed">
+                  {formatMessage(msg.content)}
+                  {msg.actions && msg.actions.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
+                      {msg.actions.map((action, j) => (
+                        <div
+                          key={j}
+                          className={cn(
+                            'flex items-center gap-1.5 text-xs px-2 py-1 rounded',
+                            action.success
+                              ? 'bg-green-500/10 text-green-400'
+                              : 'bg-red-500/10 text-red-400'
+                          )}
+                        >
+                          <span>{action.success ? '✓' : '✗'}</span>
+                          <span>{action.details}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               )}
