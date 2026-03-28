@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded } from 'lucide-react';
+import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
@@ -16,11 +16,8 @@ import { TodayEvents } from '@/components/calendar/today-events';
 import { NeedsReplySection } from '@/components/review/needs-reply-section';
 import { CommandHubChat } from '@/components/chat/command-hub-chat';
 import { ClientPulse } from '@/components/dashboard/client-pulse';
-import { RelationshipHealth } from '@/components/dashboard/relationship-health';
-import { LifecycleTracker } from '@/components/dashboard/lifecycle-tracker';
-import { PracticeIntelligence } from '@/components/dashboard/practice-intelligence';
-import { ThemeAlerts } from '@/components/dashboard/theme-alerts';
 import { FollowUpWidget } from '@/components/dashboard/follow-up-widget';
+import { IntelligencePanel } from '@/components/dashboard/intelligence-panel';
 import { isToday, isThisWeek } from 'date-fns';
 
 export default function FocusView() {
@@ -86,18 +83,29 @@ export default function FocusView() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
+    <div className="min-h-screen bg-background pb-16 lg:pb-0">
+      {/* Header (sticky) */}
       <header className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
+          {/* Logo */}
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Zap className="w-5 h-5 text-primary" />
-            <h1 className="text-lg font-bold tracking-tight">COMMAND HUB</h1>
+            <h1 className="text-lg font-bold tracking-tight hidden sm:block">COMMAND HUB</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <Link href="/settings" className="text-muted hover:text-foreground transition-colors">
-              <Settings className="w-5 h-5" />
-            </Link>
+
+          {/* Ask Command Hub search bar */}
+          <button
+            onClick={() => setChatOpen(true)}
+            className="flex-1 flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2 hover:bg-card-hover transition-colors group max-w-md mx-auto"
+          >
+            <Search className="w-4 h-4 text-muted group-hover:text-primary transition-colors" />
+            <span className="text-sm text-muted group-hover:text-foreground transition-colors">
+              Ask Command Hub...
+            </span>
+          </button>
+
+          {/* Right actions */}
+          <div className="flex items-center gap-2 flex-shrink-0">
             {reviewEmails.length > 0 && (
               <a
                 href="/review"
@@ -109,49 +117,58 @@ export default function FocusView() {
             )}
             <button
               onClick={() => setShowQuickAdd(true)}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Add
+              <span className="hidden sm:inline">Add</span>
             </button>
+            <Link href="/settings" className="text-muted hover:text-foreground transition-colors">
+              <Settings className="w-5 h-5" />
+            </Link>
           </div>
         </div>
       </header>
 
       {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 py-6 pb-24">
-        {/* Stats bar - visible on desktop */}
-        <div className="hidden lg:grid grid-cols-4 gap-2 mb-6">
-          <div className="bg-card rounded-lg p-3 text-center border border-border/50">
-            <p className="text-2xl font-bold text-danger">{stats.overdue}</p>
-            <p className="text-xs text-muted">Overdue</p>
-          </div>
-          <div className="bg-card rounded-lg p-3 text-center border border-border/50">
-            <p className="text-2xl font-bold text-warning">{stats.dueToday}</p>
-            <p className="text-xs text-muted">Due Today</p>
-          </div>
-          <div className="bg-card rounded-lg p-3 text-center border border-border/50">
-            <p className="text-2xl font-bold text-primary">{stats.thisWeek}</p>
-            <p className="text-xs text-muted">This Week</p>
-          </div>
-          <div className="bg-card rounded-lg p-3 text-center border border-border/50">
-            <p className="text-2xl font-bold text-orange-400">{stats.waitingOn}</p>
-            <p className="text-xs text-muted">Waiting On</p>
-          </div>
-        </div>
-
-        {/* Two-column layout on desktop, single column on mobile */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* Left column (desktop) / Main flow (mobile) */}
-          <div className="lg:col-span-3 space-y-6">
-            {/* Today's Calendar */}
-            <TodayEvents
-              events={events}
-              connected={connected}
-              loading={calendarLoading}
+      <main className="max-w-7xl mx-auto px-4 py-4">
+        {/* MOBILE LAYOUT */}
+        <div className="lg:hidden space-y-4">
+          {/* 1. Next Up Card */}
+          <div className="bg-card rounded-xl border border-border border-l-2 border-l-primary p-4">
+            <NextUpCard
+              commitment={nextUp}
+              onComplete={async (id) => { await completeCommitment(id); }}
+              onSnooze={async (id, date) => { await snoozeCommitment(id, date); }}
             />
+          </div>
 
-            {/* Needs Attention */}
+          {/* 2. Stats Bar */}
+          <div className="grid grid-cols-4 gap-2">
+            <button className="bg-card rounded-xl border border-border p-3 text-center">
+              <p className="text-2xl font-bold text-danger">{stats.overdue}</p>
+              <p className="text-xs text-muted">Overdue</p>
+            </button>
+            <button className="bg-card rounded-xl border border-border p-3 text-center">
+              <p className="text-2xl font-bold text-warning">{stats.dueToday}</p>
+              <p className="text-xs text-muted">Due Today</p>
+            </button>
+            <button className="bg-card rounded-xl border border-border p-3 text-center">
+              <p className="text-2xl font-bold text-primary">{stats.thisWeek}</p>
+              <p className="text-xs text-muted">This Week</p>
+            </button>
+            <button className="bg-card rounded-xl border border-border p-3 text-center">
+              <p className="text-2xl font-bold text-orange-400">{stats.waitingOn}</p>
+              <p className="text-xs text-muted">Waiting On</p>
+            </button>
+          </div>
+
+          {/* 3. Today's Calendar */}
+          <div className="bg-card rounded-xl border border-border p-4">
+            <TodayEvents events={events} connected={connected} loading={calendarLoading} />
+          </div>
+
+          {/* 4. Needs Attention */}
+          <div className="bg-card rounded-xl border border-border p-4">
             <CommitmentList
               commitments={needsAttention}
               title="Needs Attention"
@@ -160,135 +177,144 @@ export default function FocusView() {
               onSnooze={snoozeCommitment}
               onCancel={cancelCommitment}
             />
+          </div>
 
-            {/* Needs Reply */}
+          {/* 5. Waiting On */}
+          <div className="bg-card rounded-xl border border-border p-4">
+            <WaitingOnList commitments={waitingOn} onReceived={completeCommitment} />
+          </div>
+
+          {/* 6. Follow-up Queue */}
+          <div className="bg-card rounded-xl border border-border p-4">
+            <FollowUpWidget />
+          </div>
+
+          {/* 7. Needs Reply */}
+          <div className="bg-card rounded-xl border border-border p-4">
             <NeedsReplySection emails={needsReplyEmails} />
           </div>
 
-          {/* Right column (desktop) / continues below on mobile */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Next Up Card */}
-            <NextUpCard
-              commitment={nextUp}
-              onComplete={async (id) => {
-                await completeCommitment(id);
-              }}
-              onSnooze={async (id, date) => {
-                await snoozeCommitment(id, date);
-              }}
-            />
+          {/* 8. Alerts & Health (combined) */}
+          <IntelligencePanel />
 
-            {/* Follow Up Queue */}
-            <FollowUpWidget />
-
-            {/* Stats bar - mobile only */}
-            <div className="grid grid-cols-4 gap-2 lg:hidden">
-              <div className="bg-card rounded-lg p-3 text-center border border-border/50">
-                <p className="text-2xl font-bold text-danger">{stats.overdue}</p>
-                <p className="text-xs text-muted">Overdue</p>
-              </div>
-              <div className="bg-card rounded-lg p-3 text-center border border-border/50">
-                <p className="text-2xl font-bold text-warning">{stats.dueToday}</p>
-                <p className="text-xs text-muted">Due Today</p>
-              </div>
-              <div className="bg-card rounded-lg p-3 text-center border border-border/50">
-                <p className="text-2xl font-bold text-primary">{stats.thisWeek}</p>
-                <p className="text-xs text-muted">This Week</p>
-              </div>
-              <div className="bg-card rounded-lg p-3 text-center border border-border/50">
-                <p className="text-2xl font-bold text-orange-400">{stats.waitingOn}</p>
-                <p className="text-xs text-muted">Waiting On</p>
-              </div>
-            </div>
-
-            {/* Inbox Review badge */}
-            {reviewEmails.length > 0 && (
-              <Link
-                href="/review"
-                className="flex items-center gap-3 bg-warning/10 border border-warning/30 rounded-lg px-4 py-3 hover:bg-warning/20 transition-colors"
-              >
-                <Inbox className="w-5 h-5 text-warning" />
-                <div>
-                  <p className="text-sm font-medium text-foreground">Inbox Review</p>
-                  <p className="text-xs text-muted">{reviewEmails.length} items need review</p>
-                </div>
-              </Link>
-            )}
-
-            {/* Relationship Health */}
-            <RelationshipHealth />
-
-            {/* Engagement Lifecycle */}
-            <LifecycleTracker />
-
-            {/* Client Pulse */}
+          {/* 9. Client Pulse */}
+          <div className="bg-card rounded-xl border border-border p-4">
             <ClientPulse />
-
-            {/* Practice Intelligence */}
-            <PracticeIntelligence />
-
-            {/* Theme Alerts */}
-            <ThemeAlerts />
-
-            {/* Waiting On */}
-            <WaitingOnList
-              commitments={waitingOn}
-              onReceived={completeCommitment}
-            />
           </div>
         </div>
 
-        {/* Quick Links - full width */}
-        <div className="grid grid-cols-3 gap-2 pt-6">
-          <Link
-            href="/clients"
-            className="flex items-center gap-2 bg-card rounded-lg px-4 py-3 hover:bg-card-hover transition-colors"
-          >
-            <Users className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium">Clients</span>
-          </Link>
-          <Link
-            href="/transcripts"
-            className="flex items-center gap-2 bg-card rounded-lg px-4 py-3 hover:bg-card-hover transition-colors"
-          >
-            <FileText className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium">Transcripts</span>
-          </Link>
-          <Link
-            href="/follow-ups"
-            className="flex items-center gap-2 bg-card rounded-lg px-4 py-3 hover:bg-card-hover transition-colors"
-          >
-            <PhoneForwarded className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium">Follow-ups</span>
-          </Link>
-        </div>
+        {/* DESKTOP LAYOUT */}
+        <div className="hidden lg:grid lg:grid-cols-5 gap-4">
+          {/* Left column - "Your Day" */}
+          <div className="lg:col-span-3 space-y-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Your Day</h2>
 
-        {/* Ask Command Hub bar */}
-        <div className="mt-6">
-          <button
-            onClick={() => setChatOpen(true)}
-            className="w-full flex items-center gap-3 bg-card border border-border/50 rounded-lg px-4 py-3 hover:bg-card-hover transition-colors group"
-          >
-            <MessageSquare className="w-5 h-5 text-primary group-hover:text-primary" />
-            <span className="text-sm text-muted group-hover:text-foreground transition-colors">
-              Ask Command Hub...
-            </span>
-          </button>
+            {/* Next Up Card (hero) */}
+            <div className="bg-card rounded-xl border border-border border-l-2 border-l-primary p-4">
+              <NextUpCard
+                commitment={nextUp}
+                onComplete={async (id) => { await completeCommitment(id); }}
+                onSnooze={async (id, date) => { await snoozeCommitment(id, date); }}
+              />
+            </div>
+
+            {/* Today's Calendar */}
+            <div className="bg-card rounded-xl border border-border p-4">
+              <TodayEvents events={events} connected={connected} loading={calendarLoading} />
+            </div>
+
+            {/* Needs Attention */}
+            <div className="bg-card rounded-xl border border-border p-4">
+              <CommitmentList
+                commitments={needsAttention}
+                title="Needs Attention"
+                emptyMessage="Queue is clear after your next task."
+                onComplete={completeCommitment}
+                onSnooze={snoozeCommitment}
+                onCancel={cancelCommitment}
+              />
+            </div>
+
+            {/* Needs Reply */}
+            <div className="bg-card rounded-xl border border-border p-4">
+              <NeedsReplySection emails={needsReplyEmails} />
+            </div>
+          </div>
+
+          {/* Right column - "Intelligence" */}
+          <div className="lg:col-span-2 space-y-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Intelligence</h2>
+
+            {/* Stats Bar */}
+            <div className="grid grid-cols-4 gap-2">
+              <button className="bg-card rounded-xl border border-border p-3 text-center">
+                <p className="text-2xl font-bold text-danger">{stats.overdue}</p>
+                <p className="text-xs text-muted">Overdue</p>
+              </button>
+              <button className="bg-card rounded-xl border border-border p-3 text-center">
+                <p className="text-2xl font-bold text-warning">{stats.dueToday}</p>
+                <p className="text-xs text-muted">Due Today</p>
+              </button>
+              <button className="bg-card rounded-xl border border-border p-3 text-center">
+                <p className="text-2xl font-bold text-primary">{stats.thisWeek}</p>
+                <p className="text-xs text-muted">This Week</p>
+              </button>
+              <button className="bg-card rounded-xl border border-border p-3 text-center">
+                <p className="text-2xl font-bold text-orange-400">{stats.waitingOn}</p>
+                <p className="text-xs text-muted">Waiting On</p>
+              </button>
+            </div>
+
+            {/* Follow-up Queue */}
+            <div className="bg-card rounded-xl border border-border p-4">
+              <FollowUpWidget />
+            </div>
+
+            {/* Waiting On */}
+            <div className="bg-card rounded-xl border border-border p-4">
+              <WaitingOnList commitments={waitingOn} onReceived={completeCommitment} />
+            </div>
+
+            {/* Alerts & Health (tabbed) */}
+            <IntelligencePanel />
+
+            {/* Client Pulse */}
+            <div className="bg-card rounded-xl border border-border p-4">
+              <ClientPulse />
+            </div>
+          </div>
         </div>
       </main>
 
-      {/* Quick Add FAB (mobile) + Modal */}
+      {/* Mobile Footer (sticky tab bar) */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur-sm border-t border-border">
+        <div className="flex items-center justify-around py-2 px-4">
+          <Link href="/clients" className="flex flex-col items-center gap-0.5 px-3 py-1 text-muted hover:text-foreground transition-colors">
+            <Users className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Clients</span>
+          </Link>
+          <Link href="/transcripts" className="flex flex-col items-center gap-0.5 px-3 py-1 text-muted hover:text-foreground transition-colors">
+            <FileText className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Transcripts</span>
+          </Link>
+          <Link href="/follow-ups" className="flex flex-col items-center gap-0.5 px-3 py-1 text-muted hover:text-foreground transition-colors">
+            <PhoneForwarded className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Follow-ups</span>
+          </Link>
+          <Link href="/settings" className="flex flex-col items-center gap-0.5 px-3 py-1 text-muted hover:text-foreground transition-colors">
+            <Settings className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Settings</span>
+          </Link>
+        </div>
+      </nav>
+
+      {/* Quick Add Modal */}
       <QuickAdd
         organizations={organizations}
         onSubmit={async (input) => {
           await createCommitment(input);
         }}
       />
-
-      {/* Desktop Quick Add hint */}
-      <div className="hidden sm:block fixed bottom-4 right-4 text-xs text-muted/50">
-        Press <kbd className="px-1.5 py-0.5 bg-card rounded border border-border text-muted">Ctrl+K</kbd> to quick add
-      </div>
 
       {/* Chat Panel */}
       <CommandHubChat isOpen={chatOpen} onClose={() => setChatOpen(false)} />
