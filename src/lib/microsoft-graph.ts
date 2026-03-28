@@ -4,7 +4,20 @@ const TENANT = 'common';
 const AUTH_ENDPOINT = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/authorize`;
 const TOKEN_ENDPOINT = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`;
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
-const SCOPES = ['Calendars.Read', 'Mail.Read', 'User.Read', 'offline_access'];
+const SCOPES = [
+  'Calendars.Read',
+  'Calendars.ReadWrite',
+  'Mail.Read',
+  'Mail.ReadWrite',
+  'Mail.Send',
+  'Contacts.Read',
+  'Tasks.ReadWrite',
+  'OnlineMeetings.Read',
+  'Files.Read',
+  'People.Read',
+  'User.Read',
+  'offline_access',
+];
 
 function getEnv(name: string): string {
   const value = process.env[name];
