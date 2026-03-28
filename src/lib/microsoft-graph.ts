@@ -145,6 +145,83 @@ export async function fetchCalendarEvents(startDate: string, endDate: string) {
   return data.value;
 }
 
+export async function fetchEmails(sinceDate: string, top: number = 50) {
+  const accessToken = await getValidAccessToken();
+
+  const filter = `receivedDateTime ge ${sinceDate}`;
+  const url = `${GRAPH_BASE}/me/messages?$top=${top}&$orderby=receivedDateTime desc&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,body,bodyPreview,receivedDateTime,isRead,conversationId`;
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Prefer: 'outlook.body-content-type="text"',
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`Failed to fetch emails: ${errorData.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.value;
+}
+
+export async function syncEmails() {
+  const supabase = createServerClient();
+
+  // Get the last synced email timestamp, or default to 7 days ago
+  const { data: lastEmail } = await supabase
+    .from('emails')
+    .select('received_at')
+    .order('received_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  const sinceDate = lastEmail?.received_at
+    || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const emails = await fetchEmails(sinceDate);
+
+  for (const email of emails) {
+    const sender = email.from?.emailAddress;
+    const recipients = [
+      ...(email.toRecipients || []).map((r: { emailAddress?: { name?: string; address?: string } }) => ({
+        name: r.emailAddress?.name,
+        address: r.emailAddress?.address,
+        type: 'to',
+      })),
+      ...(email.ccRecipients || []).map((r: { emailAddress?: { name?: string; address?: string } }) => ({
+        name: r.emailAddress?.name,
+        address: r.emailAddress?.address,
+        type: 'cc',
+      })),
+    ];
+
+    await supabase
+      .from('emails')
+      .upsert(
+        {
+          ms_message_id: email.id,
+          subject: email.subject ?? null,
+          sender: sender?.name ?? null,
+          sender_email: sender?.address ?? null,
+          recipients,
+          body_text: email.body?.content ?? null,
+          body_preview: email.bodyPreview ?? null,
+          received_at: email.receivedDateTime,
+          is_read: email.isRead ?? false,
+          is_processed: false,
+          review_status: 'pending',
+        },
+        { onConflict: 'ms_message_id', ignoreDuplicates: false }
+      );
+  }
+
+  return emails.length;
+}
+
 export async function syncCalendar() {
   const now = new Date();
 

@@ -152,3 +152,34 @@ export type CommitmentUpdateInput = Partial<
     | 'tags'
   >
 >;
+
+export type ReviewStatus = 'pending' | 'accepted' | 'dismissed';
+export type ReplyUrgency = 'today' | 'this_week' | 'no_rush';
+
+export interface AIExtraction {
+  commitments: Array<{
+    title: string;
+    commitment_type: CommitmentType;
+    suggested_due: string | null;
+    description?: string;
+  }>;
+  needs_reply: boolean;
+  reply_urgency?: ReplyUrgency;
+  summary?: string;
+}
+
+export interface ReviewEmail {
+  id: string;
+  ms_message_id: string | null;
+  sender: string | null;
+  sender_email: string | null;
+  subject: string;
+  body_preview: string;
+  received_at: string;
+  org_id: string | null;
+  is_processed: boolean;
+  ai_extraction: AIExtraction | null;
+  review_status: ReviewStatus;
+  created_at: string;
+  organization?: Organization;
+}

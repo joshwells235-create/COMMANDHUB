@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/cron/recalculate-priority", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/wake-snoozed", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/sync-calendar", "schedule": "*/15 * * * *" }
+    { "path": "/api/cron/sync-calendar", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/sync-email", "schedule": "*/15 * * * *" }
   ]
 }

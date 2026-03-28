@@ -1,15 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, Zap } from 'lucide-react';
+import { Plus, Zap, Inbox, Mail } from 'lucide-react';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
 import { useCalendarEvents } from '@/lib/hooks/use-calendar';
+import { useReviewQueue } from '@/lib/hooks/use-review-queue';
+import { useNeedsReply } from '@/lib/hooks/use-needs-reply';
 import { NextUpCard } from '@/components/commitments/next-up-card';
 import { CommitmentList } from '@/components/commitments/commitment-list';
 import { WaitingOnList } from '@/components/commitments/waiting-on-list';
 import { QuickAdd } from '@/components/commitments/quick-add';
 import { TodayEvents } from '@/components/calendar/today-events';
+import { NeedsReplySection } from '@/components/review/needs-reply-section';
 
 export default function FocusView() {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -31,6 +34,8 @@ export default function FocusView() {
 
   const { organizations } = useOrganizations();
   const { events, loading: calendarLoading, connected } = useCalendarEvents();
+  const { emails: reviewEmails } = useReviewQueue();
+  const { emails: needsReplyEmails } = useNeedsReply();
 
   // The #1 item by priority
   const joshCommitments = commitments.filter((c) => c.owner === 'josh');
@@ -58,6 +63,15 @@ export default function FocusView() {
             <h1 className="text-lg font-bold tracking-tight">COMMAND HUB</h1>
           </div>
           <div className="flex items-center gap-2">
+            {reviewEmails.length > 0 && (
+              <a
+                href="/review"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-warning/20 text-warning rounded-lg text-sm font-medium hover:bg-warning/30 transition-colors"
+              >
+                <Inbox className="w-4 h-4" />
+                <span>{reviewEmails.length}</span>
+              </a>
+            )}
             <button
               onClick={() => setShowQuickAdd(true)}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium transition-colors"
@@ -98,6 +112,9 @@ export default function FocusView() {
           onSnooze={snoozeCommitment}
           onCancel={cancelCommitment}
         />
+
+        {/* Needs Reply */}
+        <NeedsReplySection emails={needsReplyEmails} />
 
         {/* Waiting On */}
         <WaitingOnList
