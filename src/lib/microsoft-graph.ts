@@ -1,6 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server';
 
-const TENANT = 'common';
+const TENANT = process.env.AZURE_TENANT_ID || 'common';
 const AUTH_ENDPOINT = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/authorize`;
 const TOKEN_ENDPOINT = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`;
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
