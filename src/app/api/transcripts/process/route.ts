@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const orgName = (transcript.organizations as { name: string } | null)?.name || 'Unknown';
     const engagement = transcript.engagements as { name: string; type: string | null } | null;
     const engagementName = engagement?.name || 'General';
-    const engagementType = engagement?.type || 'coaching';
+    const engagementType = engagement?.type || 'session';
     const participants = Array.isArray(transcript.participants)
       ? transcript.participants.map((p: { name?: string; role?: string }) => `${p.name || 'Unknown'}${p.role ? ` (${p.role})` : ''}`).join(', ')
       : 'Not specified';
@@ -124,7 +124,104 @@ Analyze and return JSON only (no markdown code blocks):
     }
     const extraction = JSON.parse(jsonStr);
 
-    // 5. Update the transcript record
+    // 5. Session comparison: fetch prior sessions for the same org
+    let sessionComparison = null;
+    const { data: priorTranscripts } = await supabase
+      .from('transcripts')
+      .select('id, transcript_date, summary, key_themes, client_insights, ai_extraction')
+      .eq('org_id', transcript.org_id)
+      .neq('id', transcript_id)
+      .not('ai_extraction', 'is', null)
+      .order('transcript_date', { ascending: false })
+      .limit(3);
+
+    if (priorTranscripts && priorTranscripts.length > 0) {
+      const priorSessionsSummary = priorTranscripts.map((pt) => ({
+        date: pt.transcript_date,
+        summary: pt.summary || (pt.ai_extraction as Record<string, unknown>)?.summary || '',
+        themes: pt.key_themes || (pt.ai_extraction as Record<string, unknown>)?.key_themes || [],
+        insights: pt.client_insights || (pt.ai_extraction as Record<string, unknown>)?.client_insights || {},
+        commitments: (pt.ai_extraction as Record<string, unknown>)?.commitments || [],
+      }));
+
+      const comparisonMessage = await client.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2048,
+        messages: [
+          {
+            role: 'user',
+            content: `You are analyzing session-over-session progress for a leadership development client.
+
+Organization: ${orgName}
+Engagement: ${engagementName} (${engagementType})
+
+CURRENT SESSION (${transcriptDate}):
+Summary: ${extraction.summary}
+Themes: ${JSON.stringify(extraction.key_themes)}
+Insights: ${JSON.stringify(extraction.client_insights)}
+Commitments: ${JSON.stringify(extraction.commitments)}
+
+PRIOR SESSIONS (most recent first):
+${priorSessionsSummary.map((ps, i) => `--- Session ${i + 1} (${ps.date}) ---
+Summary: ${ps.summary}
+Themes: ${JSON.stringify(ps.themes)}
+Insights: ${JSON.stringify(ps.insights)}
+Commitments: ${JSON.stringify(ps.commitments)}`).join('\n\n')}
+
+Compare the current session against the prior sessions. Return JSON only (no markdown code blocks):
+{
+  "progress_since_last_session": "What changed or improved since the most recent prior session. Be specific about observable shifts.",
+  "recurring_themes": [
+    {
+      "theme": "theme name",
+      "frequency": "how many sessions it appeared in",
+      "evolution": "how this theme has evolved across sessions"
+    }
+  ],
+  "dropped_commitments": [
+    {
+      "commitment": "action item from a prior session",
+      "original_session_date": "when it was committed to",
+      "observation": "why it appears to have been dropped or not addressed"
+    }
+  ],
+  "behavioral_shifts": [
+    {
+      "area": "what shifted",
+      "from": "previous pattern or behavior",
+      "to": "current pattern or behavior",
+      "significance": "why this matters"
+    }
+  ],
+  "momentum_indicator": {
+    "status": "accelerating|steady|stalling|regressing",
+    "reasoning": "evidence-based explanation for this assessment"
+  }
+}`,
+          },
+        ],
+      });
+
+      const compTextContent = comparisonMessage.content.find((c) => c.type === 'text');
+      if (compTextContent && compTextContent.type === 'text') {
+        let compJsonStr = compTextContent.text.trim();
+        if (compJsonStr.startsWith('```')) {
+          compJsonStr = compJsonStr.replace(/```json?\n?/g, '').replace(/```$/g, '').trim();
+        }
+        try {
+          sessionComparison = JSON.parse(compJsonStr);
+        } catch (parseError) {
+          console.error('Error parsing session comparison JSON:', parseError);
+        }
+      }
+    }
+
+    // 5b. Merge session_comparison into extraction
+    if (sessionComparison) {
+      extraction.session_comparison = sessionComparison;
+    }
+
+    // 6. Update the transcript record
     await supabase
       .from('transcripts')
       .update({
@@ -138,10 +235,10 @@ Analyze and return JSON only (no markdown code blocks):
       })
       .eq('id', transcript_id);
 
-    // 6. Chunk the raw text
+    // 7. Chunk the raw text
     const chunks = chunkText(transcript.raw_text);
 
-    // 7. Insert chunks into transcript_chunks (no embeddings - using full-text search)
+    // 8. Insert chunks into transcript_chunks (no embeddings - using full-text search)
     const chunkRecords = chunks.map((content, index) => ({
       transcript_id,
       org_id: transcript.org_id,
@@ -211,6 +308,7 @@ Analyze and return JSON only (no markdown code blocks):
       themes_count: extraction.key_themes?.length || 0,
       commitments_count: extraction.commitments?.length || 0,
       chunks_created: chunks.length,
+      has_session_comparison: sessionComparison !== null,
       extraction,
     });
   } catch (error) {

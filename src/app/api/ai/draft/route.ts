@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       : 'No writing style profile available yet. Use a professional, warm, and direct tone.';
     const coachingVoice = profileMap['coaching_voice']
       ? JSON.stringify(profileMap['coaching_voice'], null, 2)
-      : 'No coaching voice profile available yet. Use an insightful, supportive coaching approach.';
+      : "No coaching voice profile available yet. Use an insightful, direct consulting approach that reflects Josh's leadership development expertise.";
 
     // Build optional context sections
     let orgContext = '';

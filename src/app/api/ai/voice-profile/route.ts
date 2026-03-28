@@ -59,7 +59,7 @@ export async function POST() {
 EMAILS (samples from Josh's correspondence):
 ${emailSamples || 'No email samples available'}
 
-COACHING TRANSCRIPTS (samples from Josh's sessions):
+SESSION TRANSCRIPTS (samples from Josh's sessions):
 ${transcriptSamples || 'No transcript samples available'}
 
 Document Josh's communication profile as JSON only (no markdown, no code blocks):

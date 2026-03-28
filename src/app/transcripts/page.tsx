@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
 
 const TRANSCRIPT_TYPES = [
-  { value: 'coaching_session', label: 'Coaching Session' },
+  { value: 'coaching_session', label: 'Coaching / 1:1 Session' },
   { value: 'workshop', label: 'Workshop' },
   { value: 'client_meeting', label: 'Client Meeting' },
   { value: 'internal', label: 'Internal' },
