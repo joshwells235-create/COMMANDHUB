@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare } from 'lucide-react';
+import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded } from 'lucide-react';
 import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
@@ -19,6 +19,8 @@ import { ClientPulse } from '@/components/dashboard/client-pulse';
 import { RelationshipHealth } from '@/components/dashboard/relationship-health';
 import { LifecycleTracker } from '@/components/dashboard/lifecycle-tracker';
 import { PracticeIntelligence } from '@/components/dashboard/practice-intelligence';
+import { ThemeAlerts } from '@/components/dashboard/theme-alerts';
+import { FollowUpWidget } from '@/components/dashboard/follow-up-widget';
 import { isToday, isThisWeek } from 'date-fns';
 
 export default function FocusView() {
@@ -176,6 +178,9 @@ export default function FocusView() {
               }}
             />
 
+            {/* Follow Up Queue */}
+            <FollowUpWidget />
+
             {/* Stats bar - mobile only */}
             <div className="grid grid-cols-4 gap-2 lg:hidden">
               <div className="bg-card rounded-lg p-3 text-center border border-border/50">
@@ -222,6 +227,9 @@ export default function FocusView() {
             {/* Practice Intelligence */}
             <PracticeIntelligence />
 
+            {/* Theme Alerts */}
+            <ThemeAlerts />
+
             {/* Waiting On */}
             <WaitingOnList
               commitments={waitingOn}
@@ -231,7 +239,7 @@ export default function FocusView() {
         </div>
 
         {/* Quick Links - full width */}
-        <div className="grid grid-cols-2 gap-2 pt-6">
+        <div className="grid grid-cols-3 gap-2 pt-6">
           <Link
             href="/clients"
             className="flex items-center gap-2 bg-card rounded-lg px-4 py-3 hover:bg-card-hover transition-colors"
@@ -245,6 +253,13 @@ export default function FocusView() {
           >
             <FileText className="w-4 h-4 text-primary" />
             <span className="text-sm font-medium">Transcripts</span>
+          </Link>
+          <Link
+            href="/follow-ups"
+            className="flex items-center gap-2 bg-card rounded-lg px-4 py-3 hover:bg-card-hover transition-colors"
+          >
+            <PhoneForwarded className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium">Follow-ups</span>
           </Link>
         </div>
 

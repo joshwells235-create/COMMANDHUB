@@ -192,6 +192,32 @@ export async function GET(request: Request) {
       };
     }
 
+    // 10. Fetch theme alerts (urgent + pattern severity)
+    const { data: themeAlertsProfile } = await supabase
+      .from('josh_profile')
+      .select('profile_data')
+      .eq('profile_type', 'theme_alerts')
+      .single();
+
+    interface ThemeAlertItem {
+      theme: string;
+      description: string;
+      clients_affected: { org_id: string; org_name: string }[];
+      frequency: number;
+      opportunity: string;
+      severity: string;
+    }
+
+    const themeAlertsData = themeAlertsProfile?.profile_data as {
+      themes?: ThemeAlertItem[];
+      coaching_opportunity?: string | null;
+      blind_spot_alert?: string | null;
+    } | null;
+
+    const activeThemeAlerts = (themeAlertsData?.themes || []).filter(
+      (t: ThemeAlertItem) => t.severity === 'urgent' || t.severity === 'pattern'
+    );
+
     // --- Format all data as text for Claude ---
 
     const formatOrg = (c: { organizations?: unknown }) => {
@@ -240,6 +266,13 @@ export async function GET(request: Request) {
       const extraction = e.ai_extraction as { reply_urgency?: string } | null;
       return `- From: ${e.sender || 'Unknown'} | Subject: ${e.subject} | Urgency: ${extraction?.reply_urgency || 'unknown'}`;
     }).join('\n') || 'No replies needed.';
+
+    const themeAlertsText = activeThemeAlerts.length > 0
+      ? activeThemeAlerts.map((t: ThemeAlertItem) => {
+          const clientNames = t.clients_affected.map((c: { org_name: string }) => c.org_name).join(', ');
+          return `- [${t.severity.toUpperCase()}] ${t.theme}: ${t.description} | Affects: ${clientNames} | Opportunity: ${t.opportunity}`;
+        }).join('\n')
+      : '';
 
     // Build the "who needs attention" data for Claude
     const orgAttentionData = (activeOrgs || []).map((org) => {
@@ -294,7 +327,11 @@ ${replyText}
 
 CLIENT ATTENTION DATA (all active orgs):
 ${attentionDataText}
-
+${activeThemeAlerts.length > 0 ? `
+CROSS-CLIENT THEME ALERTS (${activeThemeAlerts.length} active):
+${themeAlertsText}
+${themeAlertsData?.coaching_opportunity ? `Coaching Opportunity: ${themeAlertsData.coaching_opportunity}` : ''}
+` : ''}
 Generate the email as complete HTML with inline CSS. The design MUST follow these rules:
 - Dark theme: background #0f172a, card backgrounds #1e293b, text #e2e8f0, muted text #94a3b8, accent blue #3b82f6, accent green #22c55e for wins, accent amber #f59e0b for warnings, accent red #ef4444 for urgent/overdue
 - Mobile-first: max-width 600px, centered, padding 16px on cards
@@ -322,9 +359,11 @@ Structure the email with these exact sections in this order:
 
 6. **Relationship Radar**: Clients going cold (14+ days no contact). Show as a compact list with days since contact and last contact type. Color-code: 14-21 days = amber, 21+ days = red. Only show if there are any.
 
-7. **Replies Needed**: Emails awaiting response. Sort by urgency (high first). Show sender and subject. Only show if there are any.
+7. **Theme Alerts** (ONLY if CROSS-CLIENT THEME ALERTS data is provided above): Show urgent and pattern-level themes that span multiple clients. For each, show the theme name, severity badge (red for urgent, amber for pattern), which clients are affected, and the recommended action. If a coaching opportunity exists, highlight it. Keep this section compact — 2-3 alerts max.
 
-8. **Footer**: Brief, grounding sign-off. One line. Not motivational-poster cheesy — more like a thoughtful colleague. Examples of the right tone: "You've got a solid handle on things." or "Big day ahead — start with the one thing." Keep it contextual to the actual data above.
+8. **Replies Needed**: Emails awaiting response. Sort by urgency (high first). Show sender and subject. Only show if there are any.
+
+9. **Footer**: Brief, grounding sign-off. One line. Not motivational-poster cheesy — more like a thoughtful colleague. Examples of the right tone: "You've got a solid handle on things." or "Big day ahead — start with the one thing." Keep it contextual to the actual data above.
 
 Important rules:
 - If a section has no data, SKIP IT ENTIRELY (no empty state messages except for schedule)
