@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { AI_MODEL } from '@/lib/ai';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -412,7 +413,7 @@ async function executeActions(
 
           const client = new Anthropic();
           const draftResponse = await client.messages.create({
-            model: 'claude-sonnet-4-6',
+            model: AI_MODEL,
             max_tokens: 2048,
             messages: [
               {
@@ -543,7 +544,7 @@ Return as plain text, formatted for quick reading. Use short paragraphs and bull
 
           const client = new Anthropic();
           const briefingResponse = await client.messages.create({
-            model: 'claude-sonnet-4-6',
+            model: AI_MODEL,
             max_tokens: 2048,
             messages: [{ role: 'user', content: prompt }],
           });
@@ -858,7 +859,7 @@ Rules:
 
     const client = new Anthropic();
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: AI_MODEL,
       max_tokens: 2048,
       system: systemPrompt,
       messages: claudeMessages,

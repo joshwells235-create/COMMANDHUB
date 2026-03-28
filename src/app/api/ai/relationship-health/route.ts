@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { AI_MODEL } from '@/lib/ai';
 
 export const runtime = 'nodejs';
 
@@ -340,7 +341,7 @@ Provide recommendations as a JSON array of objects with "recommendation" (string
 
     const client = new Anthropic();
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: AI_MODEL,
       max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
     });

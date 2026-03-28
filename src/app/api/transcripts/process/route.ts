@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { chunkText } from '@/lib/embeddings';
+import { AI_MODEL } from '@/lib/ai';
 import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
@@ -180,7 +181,7 @@ Analyze and return JSON only (no markdown code blocks):
     // 5. Call Claude for analysis
     const client = new Anthropic({ timeout: 120_000 }); // 2 min per request
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: AI_MODEL,
       max_tokens: 4096,
       messages: [
         {
@@ -225,7 +226,7 @@ Analyze and return JSON only (no markdown code blocks):
       }));
 
       const comparisonMessage = await client.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: AI_MODEL,
         max_tokens: 2048,
         messages: [
           {
@@ -394,8 +395,9 @@ Compare the current session against the prior sessions. Return JSON only (no mar
     });
   } catch (error) {
     console.error('Transcript processing error:', error);
+    const message = error instanceof Error ? error.message : 'Transcript processing failed';
     return NextResponse.json(
-      { error: 'Transcript processing failed' },
+      { error: message },
       { status: 500 }
     );
   }

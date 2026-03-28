@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { AI_MODEL } from '@/lib/ai';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -179,7 +180,7 @@ Only include themes that genuinely appear across 3+ different clients. If fewer 
 
   const client = new Anthropic();
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: AI_MODEL,
     max_tokens: 4096,
     messages: [{ role: 'user', content: prompt }],
   });

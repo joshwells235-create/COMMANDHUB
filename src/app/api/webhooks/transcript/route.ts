@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { autoDetectOrganization } from '@/lib/auto-detect-org';
 import Anthropic from '@anthropic-ai/sdk';
+import { AI_MODEL } from '@/lib/ai';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -321,7 +322,7 @@ async function extractClassificationAndOrg(
     const opening = words.slice(0, 500).join(' ');
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: AI_MODEL,
       max_tokens: 1024,
       messages: [
         {

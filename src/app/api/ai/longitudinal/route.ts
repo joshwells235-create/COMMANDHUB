@@ -1,6 +1,7 @@
 import { type NextRequest } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { AI_MODEL } from '@/lib/ai';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -203,7 +204,7 @@ Analyze the full trajectory of this engagement and return JSON only (no markdown
 
     const client = new Anthropic();
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: AI_MODEL,
       max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     });

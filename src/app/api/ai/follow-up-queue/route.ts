@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { AI_MODEL } from '@/lib/ai';
 import type { StrategicValue } from '@/types/database';
 
 export const runtime = 'nodejs';
@@ -275,7 +276,7 @@ Respond with a JSON array of objects, one per org, in the same order. Each objec
 
     const client = new Anthropic();
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: AI_MODEL,
       max_tokens: 2048,
       messages: [{ role: 'user', content: prompt }],
     });
