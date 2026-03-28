@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { ArrowLeft, Zap, Upload, FileText, Loader2, CheckCircle, X } from 'lucide-react';
+import { ArrowLeft, Zap, Upload, FileText, Loader2, CheckCircle, X, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
 
@@ -15,9 +15,12 @@ const TRANSCRIPT_TYPES = [
 ];
 
 export default function TranscriptsPage() {
-  const { organizations } = useOrganizations();
+  const { organizations, refresh: refreshOrgs } = useOrganizations();
   const [rawText, setRawText] = useState('');
   const [fileName, setFileName] = useState('');
+  const [showNewOrg, setShowNewOrg] = useState(false);
+  const [newOrgName, setNewOrgName] = useState('');
+  const [creatingOrg, setCreatingOrg] = useState(false);
   const [orgId, setOrgId] = useState('');
   const [transcriptDate, setTranscriptDate] = useState('');
   const [transcriptType, setTranscriptType] = useState('coaching_session');
@@ -277,18 +280,82 @@ export default function TranscriptsPage() {
               <label className="text-xs text-muted block mb-1">
                 Organization <span className="text-danger">*</span>
               </label>
-              <select
-                value={orgId}
-                onChange={(e) => setOrgId(e.target.value)}
-                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
-              >
-                <option value="">Select org...</option>
-                {organizations.map((org) => (
-                  <option key={org.id} value={org.id}>
-                    {org.name}
-                  </option>
-                ))}
-              </select>
+              {showNewOrg ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newOrgName}
+                    onChange={(e) => setNewOrgName(e.target.value)}
+                    placeholder="New org name..."
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setShowNewOrg(false);
+                        setNewOrgName('');
+                      }
+                    }}
+                    className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                  />
+                  <button
+                    type="button"
+                    disabled={!newOrgName.trim() || creatingOrg}
+                    onClick={async () => {
+                      setCreatingOrg(true);
+                      try {
+                        const res = await fetch('/api/organizations', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ name: newOrgName.trim(), status: 'prospect' }),
+                        });
+                        if (!res.ok) throw new Error('Failed to create');
+                        const newOrg = await res.json();
+                        refreshOrgs();
+                        setOrgId(newOrg.id);
+                        setShowNewOrg(false);
+                        setNewOrgName('');
+                      } catch {
+                        setError('Failed to create organization');
+                      } finally {
+                        setCreatingOrg(false);
+                      }
+                    }}
+                    className="px-3 py-2 btn-gradient rounded-lg text-xs font-medium disabled:opacity-50"
+                  >
+                    {creatingOrg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Add'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowNewOrg(false); setNewOrgName(''); }}
+                    className="px-2 py-2 text-muted hover:text-foreground"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <select
+                    value={orgId}
+                    onChange={(e) => setOrgId(e.target.value)}
+                    className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">Select org...</option>
+                    {organizations.map((org) => (
+                      <option key={org.id} value={org.id}>
+                        {org.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewOrg(true)}
+                    className="flex items-center gap-1 px-2.5 py-2 text-primary hover:bg-primary/10 rounded-lg text-xs font-medium transition-colors"
+                    title="Add new organization"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    New
+                  </button>
+                </div>
+              )}
             </div>
 
             <div>

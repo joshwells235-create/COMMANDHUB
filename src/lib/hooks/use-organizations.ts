@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Organization } from '@/types/database';
 
 export function useOrganizations() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     fetch('/api/organizations')
       .then((res) => res.json())
       .then(setOrganizations)
@@ -15,5 +15,9 @@ export function useOrganizations() {
       .finally(() => setLoading(false));
   }, []);
 
-  return { organizations, loading };
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { organizations, loading, refresh };
 }
