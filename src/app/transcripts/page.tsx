@@ -96,17 +96,21 @@ export default function TranscriptsPage() {
       const createData = await createRes.json();
       const transcriptId = createData.transcript?.id || createData.id;
 
-      // Trigger AI processing
+      // Trigger AI processing (can take 1-3 min for long transcripts)
       const processRes = await fetch('/api/transcripts/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcript_id: transcriptId }),
+        signal: AbortSignal.timeout(300_000), // 5 min client timeout
       });
 
-      if (!processRes.ok) throw new Error('Processing failed');
+      if (!processRes.ok) {
+        const errData = await processRes.json().catch(() => ({}));
+        throw new Error(errData.error || 'Processing failed');
+      }
       const processResult = await processRes.json();
 
-      setResult({ summary: processResult.analysis?.summary || 'Processing complete.' });
+      setResult({ summary: processResult.summary || processResult.extraction?.summary || 'Processing complete.' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
@@ -356,7 +360,7 @@ export default function TranscriptsPage() {
           {processing ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              Processing transcript...
+              Analyzing transcript (this may take a minute)...
             </>
           ) : (
             <>

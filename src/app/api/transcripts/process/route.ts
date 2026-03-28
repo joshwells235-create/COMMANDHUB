@@ -4,7 +4,26 @@ import { chunkText } from '@/lib/embeddings';
 import Anthropic from '@anthropic-ai/sdk';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+export const maxDuration = 300;
+
+// ~150k chars ≈ 40k tokens, leaving room for prompt + response within Sonnet's 200k context
+const MAX_TRANSCRIPT_CHARS = 150_000;
+
+function truncateTranscript(text: string): { text: string; wasTruncated: boolean } {
+  if (text.length <= MAX_TRANSCRIPT_CHARS) {
+    return { text, wasTruncated: false };
+  }
+  // Keep the beginning and end — most important context is in openings and closings
+  const headSize = Math.floor(MAX_TRANSCRIPT_CHARS * 0.6);
+  const tailSize = Math.floor(MAX_TRANSCRIPT_CHARS * 0.35);
+  const head = text.slice(0, headSize);
+  const tail = text.slice(-tailSize);
+  const skippedChars = text.length - headSize - tailSize;
+  return {
+    text: `${head}\n\n[... ${skippedChars.toLocaleString()} characters omitted for length ...]\n\n${tail}`,
+    wasTruncated: true,
+  };
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,7 +63,13 @@ export async function POST(request: NextRequest) {
     const transcriptDate = transcript.transcript_date || 'Unknown';
     const personalArea = (transcript.metadata as Record<string, unknown>)?.personal_area || null;
 
-    // 4. Build the appropriate analysis prompt based on category
+    // 4. Truncate if needed
+    const { text: safeText, wasTruncated } = truncateTranscript(transcript.raw_text);
+    if (wasTruncated) {
+      console.log(`Transcript ${transcript_id} truncated from ${transcript.raw_text.length} to ${safeText.length} chars`);
+    }
+
+    // 5. Build the appropriate analysis prompt based on category
     const businessPrompt = `You are analyzing a transcript from Josh Wells's consulting practice.
 Josh is a leadership development consultant who uses frameworks including
 Language Leaks (Avatar vs Source Code, Agency/Identity/Worth lenses),
@@ -57,7 +82,7 @@ Date: ${transcriptDate}
 Participants: ${participants}
 
 TRANSCRIPT:
-${transcript.raw_text}
+${safeText}
 
 Analyze and return JSON only (no markdown code blocks):
 {
@@ -113,7 +138,7 @@ Date: ${transcriptDate}
 Participants: ${participants}
 
 TRANSCRIPT:
-${transcript.raw_text}
+${safeText}
 
 Analyze and return JSON only (no markdown code blocks):
 {
@@ -153,7 +178,7 @@ Analyze and return JSON only (no markdown code blocks):
 }`;
 
     // 5. Call Claude for analysis
-    const client = new Anthropic();
+    const client = new Anthropic({ timeout: 120_000 }); // 2 min per request
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
