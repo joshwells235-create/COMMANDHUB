@@ -158,6 +158,7 @@ async function executeActions(
   actions: ActionData[],
   supabase: ReturnType<typeof createServerClient>,
   allOrgs: Array<{ id: string; name: string }>,
+  baseUrl: string,
 ): Promise<ActionResult[]> {
   const results: ActionResult[] = [];
 
@@ -605,6 +606,235 @@ Return as plain text, formatted for quick reading. Use short paragraphs and bull
           break;
         }
 
+        case 'update_commitment': {
+          const d = action.data as { id?: string; title?: string; updates?: Record<string, unknown> };
+          let commitmentId = d.id;
+
+          if (!commitmentId && d.title) {
+            const { data: found } = await supabase
+              .from('commitments')
+              .select('id, title')
+              .ilike('title', `%${d.title}%`)
+              .in('status', ['pending', 'in_progress', 'waiting', 'snoozed'])
+              .limit(1)
+              .single();
+            if (found) commitmentId = found.id;
+          }
+
+          if (!commitmentId) {
+            results.push({ type: action.type, success: false, details: 'Could not identify commitment to update' });
+            break;
+          }
+
+          const updates = d.updates || {};
+          if (updates.due_date && typeof updates.due_date === 'string') {
+            updates.due_date = parseRelativeDate(updates.due_date) || updates.due_date;
+          }
+
+          const now = new Date().toISOString();
+          const { data, error } = await supabase
+            .from('commitments')
+            .update({ ...updates, last_touched_at: now, updated_at: now })
+            .eq('id', commitmentId)
+            .select()
+            .single();
+
+          if (error) {
+            results.push({ type: action.type, success: false, details: `DB error: ${error.message}` });
+          } else {
+            await supabase.from('commitment_activity').insert({
+              commitment_id: commitmentId,
+              action: 'updated',
+              details: { updates, source: 'chat' },
+            });
+            results.push({ type: action.type, success: true, details: `Updated '${data.title}'` });
+          }
+          break;
+        }
+
+        case 'cancel_commitment': {
+          const d = action.data as { id?: string; title?: string };
+          let commitmentId = d.id;
+
+          if (!commitmentId && d.title) {
+            const { data: found } = await supabase
+              .from('commitments')
+              .select('id, title')
+              .ilike('title', `%${d.title}%`)
+              .in('status', ['pending', 'in_progress', 'waiting', 'snoozed'])
+              .limit(1)
+              .single();
+            if (found) commitmentId = found.id;
+          }
+
+          if (!commitmentId) {
+            results.push({ type: action.type, success: false, details: 'Could not identify commitment to cancel' });
+            break;
+          }
+
+          const now = new Date().toISOString();
+          const { data, error } = await supabase
+            .from('commitments')
+            .update({ status: 'cancelled', updated_at: now, last_touched_at: now })
+            .eq('id', commitmentId)
+            .select()
+            .single();
+
+          if (error) {
+            results.push({ type: action.type, success: false, details: `DB error: ${error.message}` });
+          } else {
+            await supabase.from('commitment_activity').insert({
+              commitment_id: commitmentId,
+              action: 'cancelled',
+              details: { cancelled_at: now, source: 'chat' },
+            });
+            results.push({ type: action.type, success: true, details: `Cancelled '${data.title}'` });
+          }
+          break;
+        }
+
+        case 'update_organization': {
+          const d = action.data as { id?: string; name?: string; updates?: Record<string, unknown> };
+          let orgId = d.id;
+
+          if (!orgId && d.name) {
+            const match = allOrgs.find((o) => o.name.toLowerCase() === d.name!.toLowerCase());
+            if (match) orgId = match.id;
+          }
+
+          if (!orgId) {
+            results.push({ type: action.type, success: false, details: 'Could not identify organization' });
+            break;
+          }
+
+          const updates = d.updates || {};
+          const { data, error } = await supabase
+            .from('organizations')
+            .update({ ...updates, updated_at: new Date().toISOString() })
+            .eq('id', orgId)
+            .select()
+            .single();
+
+          if (error) {
+            results.push({ type: action.type, success: false, details: `DB error: ${error.message}` });
+          } else {
+            results.push({ type: action.type, success: true, details: `Updated '${data.name}'` });
+          }
+          break;
+        }
+
+        case 'create_organization': {
+          const d = action.data as { name?: string; status?: string; strategic_value?: string; industry?: string };
+          if (!d.name) {
+            results.push({ type: action.type, success: false, details: 'Missing organization name' });
+            break;
+          }
+
+          const { data, error } = await supabase
+            .from('organizations')
+            .insert({
+              name: d.name,
+              status: d.status || 'prospect',
+              strategic_value: d.strategic_value || 'standard',
+              industry: d.industry || null,
+            })
+            .select()
+            .single();
+
+          if (error) {
+            results.push({ type: action.type, success: false, details: `DB error: ${error.message}` });
+          } else {
+            results.push({ type: action.type, success: true, details: `Created organization '${data.name}'` });
+          }
+          break;
+        }
+
+        case 'get_client_health': {
+          const d = action.data as { org_id?: string; org_name?: string };
+          let orgId = d.org_id || null;
+          if (!orgId && d.org_name) {
+            const match = allOrgs.find((o) => o.name.toLowerCase() === d.org_name!.toLowerCase());
+            if (match) orgId = match.id;
+          }
+
+          if (!orgId) {
+            results.push({ type: action.type, success: false, details: 'Could not identify client' });
+            break;
+          }
+
+          // Fetch commitments for this org
+          const { data: orgCommitments } = await supabase
+            .from('commitments')
+            .select('title, commitment_type, status, due_date, owner, completed_at')
+            .eq('org_id', orgId)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+          const { data: orgTranscripts } = await supabase
+            .from('transcripts')
+            .select('title, transcript_date, summary')
+            .eq('org_id', orgId)
+            .eq('is_processed', true)
+            .order('transcript_date', { ascending: false })
+            .limit(5);
+
+          const open = (orgCommitments || []).filter((c) => ['pending', 'in_progress', 'waiting', 'snoozed'].includes(c.status));
+          const overdue = open.filter((c) => c.due_date && new Date(c.due_date) < new Date());
+          const completed = (orgCommitments || []).filter((c) => c.status === 'completed');
+          const lastSession = orgTranscripts?.[0];
+
+          const healthReport = `Open commitments: ${open.length} (${overdue.length} overdue)
+Completed: ${completed.length}
+Follow-through rate: ${orgCommitments && orgCommitments.length > 0 ? Math.round((completed.length / orgCommitments.length) * 100) : 0}%
+Last session: ${lastSession ? `${lastSession.title} (${lastSession.transcript_date})` : 'No sessions'}
+${lastSession?.summary ? `Summary: ${lastSession.summary.substring(0, 200)}` : ''}
+Recent transcripts: ${(orgTranscripts || []).map((t) => `${t.title} (${t.transcript_date})`).join(', ') || 'None'}`;
+
+          results.push({ type: action.type, success: true, details: healthReport });
+          break;
+        }
+
+        case 'get_prep': {
+          const d = action.data as { org_id?: string; org_name?: string };
+          let orgId = d.org_id || null;
+          if (!orgId && d.org_name) {
+            const match = allOrgs.find((o) => o.name.toLowerCase() === d.org_name!.toLowerCase());
+            if (match) orgId = match.id;
+          }
+
+          if (!orgId) {
+            results.push({ type: action.type, success: false, details: 'Could not identify client for prep' });
+            break;
+          }
+
+          // Call the prep API internally
+          try {
+            const prepUrl = new URL('/api/prep', baseUrl);
+            prepUrl.searchParams.set('org_id', orgId);
+            const prepRes = await fetch(prepUrl.toString());
+            if (prepRes.ok) {
+              const prepData = await prepRes.json();
+              const prepText = `**Last Session:** ${prepData.last_session_recap || 'No previous session'}
+
+**Open Items:** ${(prepData.open_items || []).join('; ') || 'None'}
+
+**What They're Avoiding:** ${prepData.what_theyre_avoiding || 'Nothing flagged'}
+
+**Mood Trajectory:** ${prepData.mood_trajectory || 'Unknown'}
+
+**Provocative Question:** ${prepData.provocative_question || 'None generated'}
+
+**Watch For:** ${prepData.watch_for || 'Nothing specific'}`;
+              results.push({ type: action.type, success: true, details: prepText });
+            } else {
+              results.push({ type: action.type, success: false, details: 'Prep generation failed' });
+            }
+          } catch {
+            results.push({ type: action.type, success: false, details: 'Prep generation failed' });
+          }
+          break;
+        }
+
         default:
           results.push({ type: action.type, success: false, details: `Unknown action type: ${action.type}` });
       }
@@ -676,13 +906,29 @@ export async function POST(request: NextRequest) {
     // Collect context pieces
     const contextParts: string[] = [];
 
-    // Always fetch active orgs (needed for action resolution and context)
+    // Always fetch ALL orgs (needed for action resolution and context)
     const { data: allOrgs } = await supabase
       .from('organizations')
-      .select('id, name, status, strategic_value, industry')
-      .eq('status', 'active');
+      .select('id, name, status, strategic_value, industry');
 
     const orgList = allOrgs || [];
+
+    // Always fetch Josh's voice profile + methodology for deep understanding
+    const { data: profileRows } = await supabase
+      .from('josh_profile')
+      .select('profile_type, profile_data');
+
+    const profileMap: Record<string, unknown> = {};
+    for (const row of profileRows || []) {
+      profileMap[row.profile_type] = row.profile_data;
+    }
+
+    // Always fetch recent activity so chat knows what Josh just did
+    const { data: recentActivity } = await supabase
+      .from('commitment_activity')
+      .select('action, details, created_at, commitment:commitments(title)')
+      .order('created_at', { ascending: false })
+      .limit(10);
 
     // Always fetch top commitments for general context
     const { data: commitments } = await supabase
@@ -746,12 +992,29 @@ ${events
       }
     }
 
-    // Fetch client info if relevant
-    if (intent.fetchClients || intent.clientName || intent.isAction) {
-      if (orgList.length > 0) {
-        contextParts.push(`ACTIVE CLIENTS:
-${orgList.map((o) => `- [id:${o.id}] ${o.name} (${o.strategic_value}, ${o.industry || 'no industry'})`).join('\n')}`);
-      }
+    // Always include client list for context
+    if (orgList.length > 0) {
+      contextParts.push(`ALL CLIENTS:
+${orgList.map((o) => `- [id:${o.id}] ${o.name} (${o.status}, ${o.strategic_value}, ${o.industry || 'no industry'})`).join('\n')}`);
+    }
+
+    // Include Josh's profile context
+    if (profileMap['coaching_voice'] || profileMap['writing_style'] || profileMap['priority_patterns']) {
+      const frameworks = (profileMap['coaching_voice'] as Record<string, unknown>)?.frameworks_deployed;
+      const signature = (profileMap['coaching_voice'] as Record<string, unknown>)?.signature_phrases;
+      contextParts.push(`JOSH'S PROFILE:
+${frameworks ? `Frameworks Josh uses: ${JSON.stringify(frameworks)}` : ''}
+${signature ? `Signature phrases: ${JSON.stringify(signature)}` : ''}
+Known frameworks: Language Leaks (Agency/Identity/Worth), Signal Model, Predictive Index, Five Dysfunctions, EQ-i 2.0`);
+    }
+
+    // Include recent activity
+    if (recentActivity && recentActivity.length > 0) {
+      contextParts.push(`RECENT ACTIVITY (last ${recentActivity.length} actions):
+${recentActivity.map((a) => {
+        const c = a.commitment as unknown as { title?: string } | null;
+        return `- ${a.action}: ${c?.title || 'unknown'} (${new Date(a.created_at).toLocaleDateString()})`;
+      }).join('\n')}`);
     }
 
     // Text search for transcript-related queries
@@ -806,8 +1069,8 @@ ${fallbackChunks.map((c: Record<string, unknown>) => {
     // Build system prompt
     const todayStr = new Date().toISOString().split('T')[0];
     const systemPrompt = `You are Command Hub, Josh Wells's AI chief of staff at LeadShift.
-Josh is a leadership development consultant who does sales, coaching, consulting, facilitating, training, and advising for executives and organizations.
-You have access to Josh's commitments, calendar, client data, and transcript history. Answer conversationally but concisely.
+Josh is a leadership development consultant who does sales, coaching, consulting, facilitating, training, and advising for executives and organizations. His core frameworks include Language Leaks (Agency/Identity/Worth), the Signal Model, Predictive Index, Five Dysfunctions of a Team, and EQ-i 2.0.
+You have deep access to Josh's commitments, calendar, client data, transcript history, coaching methodology, and voice profile. You know what he's working on, who needs attention, and what happened recently. Answer conversationally but concisely.
 Josh also uses Command Hub for personal commitments and transcripts. These have category='personal' and may relate to health, family, finance, home, etc. Handle these naturally — don't try to fit them into a client context.
 
 Today's date: ${todayStr}
@@ -817,38 +1080,50 @@ ${contextParts.join('\n\n')}
 ${ragContext}
 
 ACTION SYSTEM:
-You are an action-capable assistant. When the user asks you to DO something (create a commitment, snooze, complete, draft an email, generate a briefing, search transcripts, etc.), you MUST return a structured JSON response. When they ask a QUESTION or just want information, respond with plain text as usual.
+You are a fully capable chief of staff that can take action on Josh's behalf. When Josh asks you to DO something, return structured JSON. When he asks a QUESTION, respond with plain text.
 
 When an action is needed, return ONLY valid JSON (no markdown fences, no extra text) in this format:
 {
   "message": "Your human-readable response explaining what you did or are doing",
   "actions": [
-    {"type": "create_commitment", "data": {"title": "...", "org_id": "...", "org_name": "...", "commitment_type": "promise_made|ask_received|follow_up", "due_date": "...", "owner": "josh", "description": "..."}},
+    {"type": "create_commitment", "data": {"title": "...", "org_name": "...", "commitment_type": "promise_made|ask_received|follow_up|waiting_on|deliverable|prep|internal|note_to_self", "due_date": "...", "owner": "josh|other", "description": "..."}},
     {"type": "complete_commitment", "data": {"id": "...", "title": "..."}},
     {"type": "snooze_commitment", "data": {"id": "...", "title": "...", "until": "..."}},
-    {"type": "generate_draft", "data": {"org_id": "...", "org_name": "...", "draft_type": "follow_up_email|session_summary|proposal_intro|general", "context": "..."}},
-    {"type": "generate_briefing", "data": {"org_id": "...", "org_name": "..."}},
-    {"type": "search_transcripts", "data": {"query": "..."}}
+    {"type": "update_commitment", "data": {"id": "...", "title": "...", "updates": {"title": "...", "due_date": "...", "commitment_type": "...", "description": "...", "owner": "..."}}},
+    {"type": "cancel_commitment", "data": {"id": "...", "title": "..."}},
+    {"type": "update_organization", "data": {"name": "...", "updates": {"status": "active|prospect|partner|paused|completed", "strategic_value": "strategic|standard|emerging", "industry": "...", "notes": "..."}}},
+    {"type": "create_organization", "data": {"name": "...", "status": "prospect", "strategic_value": "standard", "industry": "..."}},
+    {"type": "generate_draft", "data": {"org_name": "...", "draft_type": "follow_up_email|session_summary|proposal_intro|general", "context": "..."}},
+    {"type": "generate_briefing", "data": {"org_name": "..."}},
+    {"type": "search_transcripts", "data": {"query": "..."}},
+    {"type": "get_client_health", "data": {"org_name": "..."}},
+    {"type": "get_prep", "data": {"org_name": "..."}}
   ]
 }
 
 Action guidelines:
-- For create_commitment: use commitment IDs from context when available. commitment_type must be one of: promise_made, ask_received, follow_up. For due_date, use relative terms like "tomorrow", "friday", "next week", "in 3 days" or ISO dates.
-- For complete_commitment and snooze_commitment: use the commitment ID from the context data (shown as [id:...]) when available, or the title for fuzzy matching.
-- For generate_draft: include as much context as possible about what should be drafted. draft_type must be one of: follow_up_email, session_summary, proposal_intro, general.
-- For generate_briefing: include the org_id or org_name.
-- For search_transcripts: extract the key search terms from the user's request.
+- For commitment actions: use the commitment ID from context [id:...] when available, or title for fuzzy matching.
+- commitment_type options: promise_made, ask_received, follow_up, waiting_on, deliverable, prep, internal, note_to_self.
+- For due_date: use relative terms like "tomorrow", "friday", "next week", "in 3 days" or ISO dates.
+- For update_commitment: put changed fields in the "updates" object.
+- For update_organization: put changed fields in the "updates" object.
+- For generate_draft: include context about what to draft. Use Josh's voice profile for tone.
+- For get_client_health: returns follow-through rates, open/overdue counts, session history.
+- For get_prep: returns session prep including last recap, open items, provocative question, mood trajectory.
 - Always include the "message" field with a human-readable summary.
 - Only include "actions" when the user is clearly requesting something be done.
-- You can include multiple actions in a single response if the user asks for multiple things.
+- You can include multiple actions in a single response.
 - Use org_id from context when available, fall back to org_name for resolution.
 
 Rules:
-- Be direct and actionable
-- If Josh asks "what should I do", give the #1 priority with reasoning
-- Cite specific data (dates, client names, commitment titles)
+- Be direct, strategic, and actionable — you're Josh's trusted advisor
+- If Josh asks "what should I do", give the #1 priority with clear reasoning
+- Cite specific data (dates, client names, commitment titles) — never be vague
+- Reference Josh's frameworks when relevant to coaching advice
 - If you don't have enough data, say so honestly
-- Keep responses under 200 words unless Josh asks for detail or a draft/briefing is generated`;
+- Keep responses under 200 words unless Josh asks for detail or a draft/briefing is generated
+- When Josh asks about a client, proactively surface: open commitments, last session, relationship health
+- When Josh asks you to change/edit something, use the appropriate update action`;
 
     // Build messages for Claude
     const claudeMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
@@ -878,18 +1153,19 @@ Rules:
         structured.actions,
         supabase,
         orgList.map((o) => ({ id: o.id, name: o.name })),
+        request.url,
       );
 
       // Append action result confirmations to the message
       const confirmations = actionResults.map((r) => {
-        if (r.type === 'generate_draft' && r.success) {
-          return `\n\n---\n\n${r.details}`;
-        }
-        if (r.type === 'generate_briefing' && r.success) {
+        if ((r.type === 'generate_draft' || r.type === 'generate_briefing' || r.type === 'get_prep') && r.success) {
           return `\n\n---\n\n${r.details}`;
         }
         if (r.type === 'search_transcripts' && r.success) {
           return `\n\nTranscript results:\n${r.details}`;
+        }
+        if (r.type === 'get_client_health' && r.success) {
+          return `\n\n**Client Health:**\n${r.details}`;
         }
         if (r.success) {
           return `\n\nDone — ${r.details}`;
