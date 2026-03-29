@@ -148,6 +148,46 @@ export default function ClientDetailPage() {
     refresh();
   }
 
+  // Contact edit state
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [contactEditFields, setContactEditFields] = useState<Record<string, string>>({});
+  const [contactSaving, setContactSaving] = useState(false);
+
+  function startEditingContact(c: { id: string; name: string; role: string | null; email: string | null; relationship_type: string | null; notes: string | null }) {
+    setEditingContactId(c.id);
+    setContactEditFields({
+      name: c.name,
+      role: c.role || '',
+      email: c.email || '',
+      relationship_type: c.relationship_type || '',
+      notes: c.notes || '',
+    });
+  }
+
+  async function saveContactEdit(id: string) {
+    setContactSaving(true);
+    try {
+      const res = await fetch(`/api/contacts/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: contactEditFields.name,
+          role: contactEditFields.role || null,
+          email: contactEditFields.email || null,
+          relationship_type: contactEditFields.relationship_type || null,
+          notes: contactEditFields.notes || null,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      setEditingContactId(null);
+      refresh();
+    } catch {
+      // stay in edit mode
+    } finally {
+      setContactSaving(false);
+    }
+  }
+
   const [editingCommitmentId, setEditingCommitmentId] = useState<string | null>(null);
   const [commitEditFields, setCommitEditFields] = useState<Record<string, string | null>>({});
   const [commitSaving, setCommitSaving] = useState(false);
@@ -1286,23 +1326,105 @@ export default function ClientDetailPage() {
                   {contacts.map((contact) => (
                     <div
                       key={contact.id}
-                      className="bg-card rounded-lg px-4 py-3 flex items-center gap-3"
+                      className="bg-card rounded-lg border border-transparent hover:border-border transition-all"
                     >
-                      <User className="w-4 h-4 text-muted flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground">
-                          {contact.name}
-                        </p>
-                        <div className="flex items-center gap-1.5 text-xs text-muted">
-                          {contact.role && <span>{contact.role}</span>}
-                          {contact.role && contact.relationship_type && (
-                            <span>&middot;</span>
-                          )}
-                          {contact.relationship_type && (
-                            <span>{contact.relationship_type}</span>
-                          )}
+                      {editingContactId === contact.id ? (
+                        <div className="px-4 py-3 space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-muted uppercase tracking-wide">Name</label>
+                              <input
+                                type="text"
+                                value={contactEditFields.name || ''}
+                                onChange={(e) => setContactEditFields({ ...contactEditFields, name: e.target.value })}
+                                className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-muted uppercase tracking-wide">Role</label>
+                              <input
+                                type="text"
+                                value={contactEditFields.role || ''}
+                                onChange={(e) => setContactEditFields({ ...contactEditFields, role: e.target.value })}
+                                placeholder="e.g. CEO, VP Sales..."
+                                className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[10px] text-muted uppercase tracking-wide">Email</label>
+                              <input
+                                type="email"
+                                value={contactEditFields.email || ''}
+                                onChange={(e) => setContactEditFields({ ...contactEditFields, email: e.target.value })}
+                                placeholder="email@example.com"
+                                className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-muted uppercase tracking-wide">Relationship</label>
+                              <input
+                                type="text"
+                                value={contactEditFields.relationship_type || ''}
+                                onChange={(e) => setContactEditFields({ ...contactEditFields, relationship_type: e.target.value })}
+                                placeholder="e.g. Primary, Champion..."
+                                className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted uppercase tracking-wide">Notes</label>
+                            <textarea
+                              value={contactEditFields.notes || ''}
+                              onChange={(e) => setContactEditFields({ ...contactEditFields, notes: e.target.value })}
+                              rows={2}
+                              className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary resize-y"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => saveContactEdit(contact.id)}
+                              disabled={contactSaving || !contactEditFields.name?.trim()}
+                              className="flex items-center gap-1 px-3 py-1.5 btn-gradient text-white rounded-md text-xs font-medium disabled:opacity-50"
+                            >
+                              {contactSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingContactId(null)}
+                              className="flex items-center gap-1 px-3 py-1.5 bg-card-hover text-muted rounded-md text-xs font-medium hover:text-foreground"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="px-4 py-3 flex items-center gap-3">
+                          <User className="w-4 h-4 text-muted flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground">
+                              {contact.name}
+                            </p>
+                            <div className="flex items-center gap-1.5 text-xs text-muted">
+                              {contact.role && <span>{contact.role}</span>}
+                              {contact.role && contact.relationship_type && (
+                                <span>&middot;</span>
+                              )}
+                              {contact.relationship_type && (
+                                <span>{contact.relationship_type}</span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => startEditingContact(contact)}
+                            className="flex-shrink-0 p-1.5 text-muted hover:text-primary transition-colors rounded-md hover:bg-card-hover"
+                            title="Edit contact"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

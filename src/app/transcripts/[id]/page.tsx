@@ -14,6 +14,8 @@ import {
   Calendar,
   Building2,
   RefreshCw,
+  Pencil,
+  Save,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -49,6 +51,40 @@ export default function TranscriptDetailPage() {
 
   // Reprocess state
   const [reprocessing, setReprocessing] = useState(false);
+
+  // Metadata edit state
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [metaFields, setMetaFields] = useState({ title: '', transcript_date: '', transcript_type: '' });
+  const [savingMeta, setSavingMeta] = useState(false);
+
+  function startEditingMeta() {
+    if (!transcript) return;
+    setMetaFields({
+      title: transcript.title,
+      transcript_date: transcript.transcript_date.split('T')[0],
+      transcript_type: transcript.transcript_type,
+    });
+    setEditingMeta(true);
+  }
+
+  async function saveMetaEdit() {
+    setSavingMeta(true);
+    try {
+      const res = await fetch(`/api/transcripts/${transcriptId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(metaFields),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      const data = await res.json();
+      setTranscript((prev) => prev ? { ...prev, ...metaFields, ...(data.transcript || {}) } : prev);
+      setEditingMeta(false);
+    } catch {
+      // stay in edit mode
+    } finally {
+      setSavingMeta(false);
+    }
+  }
 
   useEffect(() => {
     if (!transcriptId) return;
@@ -237,33 +273,101 @@ export default function TranscriptDetailPage() {
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-4 pb-24">
         {/* Transcript Info */}
         <div className="premium-card p-5">
-          <h2 className="text-lg font-bold mb-2">{transcript.title}</h2>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
-            {transcript.organizations && (
-              <Link
-                href={`/clients/${transcript.org_id}`}
-                className="flex items-center gap-1 text-primary hover:underline"
-              >
-                <Building2 className="w-3.5 h-3.5" />
-                {transcript.organizations.name}
-              </Link>
-            )}
-            <span className="flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5" />
-              {format(new Date(transcript.transcript_date), 'MMM d, yyyy')}
-            </span>
-            <span className="flex items-center gap-1">
-              <FileText className="w-3.5 h-3.5" />
-              {transcript.transcript_type}
-            </span>
-            {transcript.duration_minutes && (
-              <span>{transcript.duration_minutes} min</span>
-            )}
-          </div>
-          {transcript.summary && (
-            <p className="text-sm text-foreground-secondary mt-3 leading-relaxed">
-              {transcript.summary}
-            </p>
+          {editingMeta ? (
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] text-muted uppercase tracking-wide">Title</label>
+                <input
+                  type="text"
+                  value={metaFields.title}
+                  onChange={(e) => setMetaFields({ ...metaFields, title: e.target.value })}
+                  className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] text-muted uppercase tracking-wide">Date</label>
+                  <input
+                    type="date"
+                    value={metaFields.transcript_date}
+                    onChange={(e) => setMetaFields({ ...metaFields, transcript_date: e.target.value })}
+                    className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted uppercase tracking-wide">Type</label>
+                  <select
+                    value={metaFields.transcript_type}
+                    onChange={(e) => setMetaFields({ ...metaFields, transcript_type: e.target.value })}
+                    className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm"
+                  >
+                    <option value="coaching_session">Coaching Session</option>
+                    <option value="workshop">Workshop</option>
+                    <option value="client_meeting">Client Meeting</option>
+                    <option value="partnership_meeting">Partnership Meeting</option>
+                    <option value="internal">Internal</option>
+                    <option value="vistage">Vistage</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={saveMetaEdit}
+                  disabled={savingMeta || !metaFields.title.trim()}
+                  className="flex items-center gap-1 px-3 py-1.5 btn-gradient text-white rounded-md text-xs font-medium disabled:opacity-50"
+                >
+                  {savingMeta ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  Save
+                </button>
+                <button
+                  onClick={() => setEditingMeta(false)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-card-hover text-muted rounded-md text-xs font-medium hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="text-lg font-bold">{transcript.title}</h2>
+                <button
+                  onClick={startEditingMeta}
+                  className="flex-shrink-0 p-1.5 text-muted hover:text-primary transition-colors rounded-md hover:bg-card"
+                  title="Edit metadata"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-sm text-muted mt-2">
+                {transcript.organizations && (
+                  <Link
+                    href={`/clients/${transcript.org_id}`}
+                    className="flex items-center gap-1 text-primary hover:underline"
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    {transcript.organizations.name}
+                  </Link>
+                )}
+                <span className="flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" />
+                  {format(new Date(transcript.transcript_date), 'MMM d, yyyy')}
+                </span>
+                <span className="flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5" />
+                  {transcript.transcript_type}
+                </span>
+                {transcript.duration_minutes && (
+                  <span>{transcript.duration_minutes} min</span>
+                )}
+              </div>
+              {transcript.summary && (
+                <p className="text-sm text-foreground-secondary mt-3 leading-relaxed">
+                  {transcript.summary}
+                </p>
+              )}
+            </>
           )}
         </div>
 
