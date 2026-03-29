@@ -371,7 +371,7 @@ Compare the current session against the prior sessions. Return JSON only (no mar
       }
     }
 
-    // 9. Create commitments from the extraction
+    // 9. Create commitments from the extraction + log activity
     if (extraction.commitments && extraction.commitments.length > 0) {
       const commitmentRecords = extraction.commitments.map(
         (c: {
@@ -399,16 +399,58 @@ Compare the current session against the prior sessions. Return JSON only (no mar
         })
       );
 
-      const { error: commitError } = await supabase
+      const { data: createdCommitments, error: commitError } = await supabase
         .from('commitments')
-        .insert(commitmentRecords);
+        .insert(commitmentRecords)
+        .select('id, title');
 
       if (commitError) {
         console.error('Error creating commitments:', commitError);
       }
+
+      // Log activity for each commitment created from transcript
+      if (createdCommitments && createdCommitments.length > 0) {
+        const activityRecords = createdCommitments.map((c) => ({
+          commitment_id: c.id,
+          action: 'created',
+          details: {
+            title: c.title,
+            source: 'transcript',
+            transcript_id,
+            transcript_title: transcript.title,
+          },
+        }));
+        await supabase.from('commitment_activity').insert(activityRecords);
+      }
     }
 
-    // 10. Return success with the analysis
+    // 10. Update org metadata: mark last contact, refresh updated_at
+    if (transcript.org_id) {
+      await supabase
+        .from('organizations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', transcript.org_id);
+    }
+
+    // 11. Update engagement session tracking if linked
+    if (transcript.engagement_id) {
+      // Update the engagement's notes with session count
+      const { data: engagementTranscripts } = await supabase
+        .from('transcripts')
+        .select('id')
+        .eq('engagement_id', transcript.engagement_id)
+        .eq('is_processed', true);
+
+      const sessionCount = engagementTranscripts?.length || 0;
+      await supabase
+        .from('engagements')
+        .update({
+          notes: `Sessions: ${sessionCount} | Last session: ${transcript.transcript_date}`,
+        })
+        .eq('id', transcript.engagement_id);
+    }
+
+    // 12. Return success with the analysis
     return NextResponse.json({
       success: true,
       transcript_id,
