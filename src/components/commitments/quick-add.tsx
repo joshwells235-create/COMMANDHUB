@@ -45,20 +45,16 @@ export function QuickAdd({ organizations, onSubmit, isOpen: externalOpen, onClos
     }
   }, [isOpen]);
 
-  // Keyboard shortcut: Cmd/Ctrl+K
+  // Escape to close
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsOpen(true);
-      }
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && isOpen) {
         setIsOpen(false);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [isOpen]);
 
   // Auto-suggest org from title text
   useEffect(() => {

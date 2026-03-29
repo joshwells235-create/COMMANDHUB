@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target } from 'lucide-react';
 import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
@@ -19,11 +19,13 @@ import { ClientPulse } from '@/components/dashboard/client-pulse';
 import { ActivityFeed } from '@/components/dashboard/activity-feed';
 import { FollowUpWidget } from '@/components/dashboard/follow-up-widget';
 import { IntelligencePanel } from '@/components/dashboard/intelligence-panel';
+import { CommandPalette } from '@/components/ui/command-palette';
 import { isToday, isThisWeek } from 'date-fns';
 
 export default function FocusView() {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   const {
     commitments,
@@ -95,15 +97,18 @@ export default function FocusView() {
             <h1 className="text-lg font-semibold tracking-tight hidden sm:block text-gradient">COMMAND HUB</h1>
           </div>
 
-          {/* Ask Command Hub search bar */}
+          {/* Command palette trigger */}
           <button
-            onClick={() => setChatOpen(true)}
+            onClick={() => setCommandPaletteOpen(true)}
             className="flex-1 flex items-center gap-2 glass rounded-lg px-3 py-2 hover:border-primary/30 group max-w-md mx-auto"
           >
             <Search className="w-4 h-4 text-muted group-hover:text-primary transition-colors" />
             <span className="text-sm text-muted group-hover:text-foreground transition-colors">
-              Ask Command Hub...
+              Search or type a command...
             </span>
+            <kbd className="hidden sm:inline-flex ml-auto items-center gap-0.5 px-1.5 py-0.5 bg-background border border-border rounded text-[10px] text-muted">
+              ⌘K
+            </kbd>
           </button>
 
           {/* Right actions */}
@@ -352,6 +357,30 @@ export default function FocusView() {
 
       {/* Chat Panel */}
       <CommandHubChat isOpen={chatOpen} onClose={() => setChatOpen(false)} />
+
+      {/* Command Palette */}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        organizations={organizations}
+        onOpenChat={() => setChatOpen(true)}
+        onOpenQuickAdd={() => setShowQuickAdd(true)}
+      />
+      <CmdKListener onOpen={() => setCommandPaletteOpen(true)} />
     </div>
   );
+}
+
+function CmdKListener({ onOpen }: { onOpen: () => void }) {
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        onOpen();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onOpen]);
+  return null;
 }
