@@ -338,6 +338,7 @@ Compare the current session against the prior sessions. Return JSON only (no mar
         notable_quotes: extraction.notable_quotes,
         ai_extraction: extraction,
         review_status: 'pending',
+        is_processed: true,
       })
       .eq('id', transcript_id);
 

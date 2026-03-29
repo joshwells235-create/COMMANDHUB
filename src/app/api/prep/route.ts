@@ -30,12 +30,12 @@ export async function GET(request: NextRequest) {
         supabase
           .from('transcripts')
           .select(
-            'transcript_date, summary, key_themes, client_insights, ai_extraction'
+            'transcript_date, summary, key_themes, client_insights, session_arc, notable_quotes, ai_extraction, recommended_focus_next_session'
           )
           .eq('org_id', orgId)
           .eq('is_processed', true)
           .order('transcript_date', { ascending: false })
-          .limit(1),
+          .limit(3),
         supabase
           .from('commitments')
           .select('title, commitment_type, owner, due_date, status, priority_score')
@@ -62,7 +62,8 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: 'Organization not found' }, { status: 404 });
     }
 
-    const lastTranscript = transcriptRes.data?.[0] || null;
+    const transcripts = transcriptRes.data || [];
+    const lastTranscript = transcripts[0] || null;
     const commitments = commitmentsRes.data || [];
     const contacts = contactsRes.data || [];
 
@@ -83,54 +84,74 @@ export async function GET(request: NextRequest) {
       )
       .join('\n') || 'None';
 
-    const themes = lastTranscript?.key_themes;
-    const themesStr = Array.isArray(themes)
-      ? themes
-          .map((t: { theme?: string } | string) =>
-            typeof t === 'string' ? t : t.theme || ''
-          )
-          .filter(Boolean)
-          .join(', ')
-      : 'None';
+    // Build session history from all fetched transcripts
+    const sessionHistoryParts = transcripts.map((t, idx) => {
+      const themes = t.key_themes;
+      const themesStr = Array.isArray(themes)
+        ? themes
+            .map((th: { theme?: string } | string) =>
+              typeof th === 'string' ? th : th.theme || ''
+            )
+            .filter(Boolean)
+            .join(', ')
+        : 'None';
 
-    const insights = lastTranscript?.client_insights as {
-      patterns_observed?: string;
-      resistance_points?: string;
-      emotional_state?: string;
-    } | null;
+      const insights = t.client_insights as {
+        patterns_observed?: string;
+        resistance_points?: string;
+        emotional_state?: string;
+        breakthroughs?: string;
+        growth_areas?: string;
+        language_leaks_observed?: Array<{ quote: string; leak_type: string; interpretation: string }>;
+      } | null;
 
-    const prompt = `You are preparing Josh Wells for a client meeting in 2 minutes. Be concise and direct.
+      const quotes = Array.isArray(t.notable_quotes)
+        ? (t.notable_quotes as Array<{ quote: string; speaker: string }>).map((q) => `"${q.quote}" — ${q.speaker}`).join('; ')
+        : '';
+
+      return `Session ${idx + 1} (${t.transcript_date}):
+Summary: ${t.summary || 'No summary'}
+${t.session_arc ? `Arc: ${t.session_arc}` : ''}
+Themes: ${themesStr}
+${insights?.patterns_observed ? `Patterns: ${insights.patterns_observed}` : ''}
+${insights?.resistance_points ? `Resistance: ${insights.resistance_points}` : ''}
+${insights?.emotional_state ? `Emotional state: ${insights.emotional_state}` : ''}
+${insights?.breakthroughs ? `Breakthroughs: ${insights.breakthroughs}` : ''}
+${insights?.growth_areas ? `Growth areas: ${insights.growth_areas}` : ''}
+${insights?.language_leaks_observed?.length ? `Language leaks: ${insights.language_leaks_observed.map((l) => `"${l.quote}" (${l.leak_type}: ${l.interpretation})`).join('; ')}` : ''}
+${quotes ? `Notable quotes: ${quotes}` : ''}
+${t.recommended_focus_next_session ? `Recommended focus for next session: ${t.recommended_focus_next_session}` : ''}`;
+    });
+
+    const prompt = `You are preparing Josh Wells for a client meeting in 2 minutes. Be concise and direct. You have full access to the session history below.
 
 Client: ${org.name} (${org.industry || 'Unknown industry'})
 Contacts: ${contactsList}
 Status: ${org.status}, Strategic value: ${org.strategic_value}
 
-Last session (${lastTranscript?.transcript_date || 'unknown date'}):
-Summary: ${lastTranscript?.summary || 'No previous session data'}
-Themes: ${themesStr}
-Patterns: ${insights?.patterns_observed || 'None noted'}
-Resistance: ${insights?.resistance_points || 'None noted'}
-Emotional state: ${insights?.emotional_state || 'Unknown'}
-${sessionComparison ? `Session comparison: ${JSON.stringify(sessionComparison)}` : ''}
+${sessionHistoryParts.length > 0 ? `SESSION HISTORY (most recent first):\n${sessionHistoryParts.join('\n\n')}` : 'No previous sessions recorded.'}
+
+${sessionComparison ? `Session-over-session comparison: ${JSON.stringify(sessionComparison)}` : ''}
 
 Open commitments:
 ${commitmentsList}
 
 Return ONLY valid JSON (no markdown, no code blocks):
 {
-  "last_session_recap": "2-3 sentences of what happened last time",
+  "last_session_recap": "2-3 sentences of what happened last time, referencing specific themes and quotes",
   "open_items": ["commitment 1 with owner", "commitment 2 with owner"],
-  "what_theyre_avoiding": "one thing the client has been dancing around, or 'Nothing apparent' if unclear",
-  "mood_trajectory": "improving" or "stable" or "declining" or "unknown",
-  "provocative_question": "one powerful question to ask today",
-  "watch_for": "behavioral cue or pattern to notice today",
-  "relationship_context": "key contacts and their dynamics in one sentence"
+  "what_theyre_avoiding": "one thing the client has been dancing around based on patterns across sessions, or 'Nothing apparent' if unclear",
+  "mood_trajectory": "improving" or "stable" or "declining" or "unknown" — based on session-over-session comparison,
+  "provocative_question": "one powerful question to ask today, informed by their language leaks and resistance patterns",
+  "watch_for": "behavioral cue or pattern to notice today based on historical patterns",
+  "relationship_context": "key contacts and their dynamics in one sentence",
+  "thread_to_pull": "one theme or breakthrough from recent sessions that deserves deeper exploration today"
 }`;
 
     const client = new Anthropic();
     const message = await client.messages.create({
       model: AI_MODEL,
-      max_tokens: 300,
+      max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
     });
 
