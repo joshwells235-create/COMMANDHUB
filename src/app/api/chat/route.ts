@@ -452,7 +452,7 @@ async function executeActions(
           const client = new Anthropic();
           const draftResponse = await client.messages.create({
             model: AI_MODEL,
-            max_tokens: 2048,
+            max_tokens: 4096,
             messages: [
               {
                 role: 'user',
@@ -583,7 +583,7 @@ Return as plain text, formatted for quick reading. Use short paragraphs and bull
           const client = new Anthropic();
           const briefingResponse = await client.messages.create({
             model: AI_MODEL,
-            max_tokens: 2048,
+            max_tokens: 4096,
             messages: [{ role: 'user', content: prompt }],
           });
 
@@ -872,6 +872,75 @@ Recent transcripts: ${(orgTranscripts || []).map((t) => `${t.title} (${t.transcr
           break;
         }
 
+        case 'create_contact': {
+          const d = action.data as { org_id?: string; org_name?: string; name?: string; role?: string; email?: string; relationship_type?: string; notes?: string };
+          if (!d.name) {
+            results.push({ type: action.type, success: false, details: 'Missing contact name' });
+            break;
+          }
+
+          let orgId = d.org_id || null;
+          if (!orgId && d.org_name) {
+            const match = allOrgs.find((o) => o.name.toLowerCase() === d.org_name!.toLowerCase());
+            if (match) orgId = match.id;
+          }
+
+          const { data, error } = await supabase
+            .from('contacts')
+            .insert({
+              name: d.name,
+              org_id: orgId,
+              role: d.role || null,
+              email: d.email || null,
+              relationship_type: d.relationship_type || null,
+              notes: d.notes || null,
+            })
+            .select()
+            .single();
+
+          if (error) {
+            results.push({ type: action.type, success: false, details: `DB error: ${error.message}` });
+          } else {
+            results.push({ type: action.type, success: true, details: `Created contact '${data.name}'${orgId ? ' for ' + (d.org_name || orgId) : ''}` });
+          }
+          break;
+        }
+
+        case 'update_contact': {
+          const d = action.data as { id?: string; name?: string; org_name?: string; updates?: Record<string, unknown> };
+          let contactId = d.id;
+
+          if (!contactId && d.name) {
+            let query = supabase.from('contacts').select('id, name').ilike('name', `%${d.name}%`).limit(1);
+            if (d.org_name) {
+              const match = allOrgs.find((o) => o.name.toLowerCase() === d.org_name!.toLowerCase());
+              if (match) query = query.eq('org_id', match.id);
+            }
+            const { data: found } = await query.single();
+            if (found) contactId = found.id;
+          }
+
+          if (!contactId) {
+            results.push({ type: action.type, success: false, details: 'Could not identify contact to update' });
+            break;
+          }
+
+          const updates = d.updates || {};
+          const { data, error } = await supabase
+            .from('contacts')
+            .update(updates)
+            .eq('id', contactId)
+            .select()
+            .single();
+
+          if (error) {
+            results.push({ type: action.type, success: false, details: `DB error: ${error.message}` });
+          } else {
+            results.push({ type: action.type, success: true, details: `Updated contact '${data.name}'` });
+          }
+          break;
+        }
+
         default:
           results.push({ type: action.type, success: false, details: `Unknown action type: ${action.type}` });
       }
@@ -1002,15 +1071,15 @@ ${overdueItems.length > 0 ? `\nOVERDUE (${overdueItems.length}): ${overdueItems.
 ${dueToday.length > 0 ? `\nDUE TODAY (${dueToday.length}): ${dueToday.map((c) => `${c.title} [id:${c.id}]`).join(', ')}` : ''}`);
     }
 
-    // Fetch calendar events if relevant or as default context
-    if (intent.fetchCalendar || !intent.fetchCommitments) {
+    // Fetch calendar events with AI analysis (prep notes, event type)
+    {
       const now = new Date();
       const weekEnd = new Date(now);
       weekEnd.setDate(weekEnd.getDate() + 7);
 
       const { data: events } = await supabase
         .from('calendar_events')
-        .select('subject, start_time, end_time, location, organizations(name)')
+        .select('subject, start_time, end_time, location, ai_analysis, organizations(name)')
         .gte('start_time', now.toISOString())
         .lte('start_time', weekEnd.toISOString())
         .order('start_time', { ascending: true })
@@ -1023,7 +1092,10 @@ ${events
     const orgArr = e.organizations as unknown as { name: string }[] | null;
     const orgName = orgArr?.[0]?.name;
     const start = new Date(e.start_time);
-    return `- ${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}: ${e.subject || 'Untitled'}${orgName ? ' (' + orgName + ')' : ''}${e.location ? ' @ ' + e.location : ''}`;
+    const aiData = e.ai_analysis as Record<string, unknown> | null;
+    const prepNotes = aiData?.prep_notes ? ` | Prep: ${aiData.prep_notes}` : '';
+    const eventType = aiData?.event_type ? ` [${aiData.event_type}]` : '';
+    return `- ${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}: ${e.subject || 'Untitled'}${eventType}${orgName ? ' (' + orgName + ')' : ''}${e.location ? ' @ ' + e.location : ''}${prepNotes}`;
   })
   .join('\n')}`);
       }
@@ -1035,14 +1107,84 @@ ${events
 ${orgList.map((o) => `- [id:${o.id}] ${o.name} (${o.status}, ${o.strategic_value}, ${o.industry || 'no industry'})`).join('\n')}`);
     }
 
-    // Include Josh's profile context
-    if (profileMap['coaching_voice'] || profileMap['writing_style'] || profileMap['priority_patterns']) {
-      const frameworks = (profileMap['coaching_voice'] as Record<string, unknown>)?.frameworks_deployed;
-      const signature = (profileMap['coaching_voice'] as Record<string, unknown>)?.signature_phrases;
-      contextParts.push(`JOSH'S PROFILE:
-${frameworks ? `Frameworks Josh uses: ${JSON.stringify(frameworks)}` : ''}
-${signature ? `Signature phrases: ${JSON.stringify(signature)}` : ''}
-Known frameworks: Language Leaks (Agency/Identity/Worth), Signal Model, Predictive Index, Five Dysfunctions, EQ-i 2.0`);
+    // Include Josh's FULL profile context (all profile types)
+    {
+      const profileParts: string[] = [];
+      const coaching = profileMap['coaching_voice'] as Record<string, unknown> | undefined;
+      const writing = profileMap['writing_style'] as Record<string, unknown> | undefined;
+      const themeAlerts = profileMap['theme_alerts'] as Record<string, unknown> | undefined;
+      const priorityPatterns = profileMap['priority_patterns'] as Record<string, unknown> | undefined;
+      const priorityInsights = profileMap['priority_patterns_insights'] as Record<string, unknown> | undefined;
+
+      if (coaching) {
+        if (coaching.frameworks_deployed) profileParts.push(`Frameworks Josh uses: ${JSON.stringify(coaching.frameworks_deployed)}`);
+        if (coaching.signature_phrases) profileParts.push(`Signature phrases: ${JSON.stringify(coaching.signature_phrases)}`);
+        if (coaching.coaching_style) profileParts.push(`Coaching style: ${JSON.stringify(coaching.coaching_style)}`);
+      }
+      if (writing) {
+        profileParts.push(`Writing style: ${JSON.stringify(writing).substring(0, 500)}`);
+      }
+      if (themeAlerts) {
+        profileParts.push(`Theme alerts (cross-client patterns): ${JSON.stringify(themeAlerts).substring(0, 500)}`);
+      }
+      if (priorityPatterns) {
+        profileParts.push(`Priority patterns: ${JSON.stringify(priorityPatterns).substring(0, 300)}`);
+      }
+      if (priorityInsights) {
+        profileParts.push(`Priority insights: ${JSON.stringify(priorityInsights).substring(0, 300)}`);
+      }
+      profileParts.push('Known frameworks: Language Leaks (Agency/Identity/Worth), Signal Model, Predictive Index, Five Dysfunctions, EQ-i 2.0');
+
+      contextParts.push(`JOSH'S PROFILE:\n${profileParts.join('\n')}`);
+    }
+
+    // Fetch recent emails (subjects, senders, AI extractions, reply urgency)
+    const { data: recentEmails } = await supabase
+      .from('emails')
+      .select('subject, sender, sender_email, body_preview, received_at, org_id, ai_extraction, review_status, organizations(name)')
+      .order('received_at', { ascending: false })
+      .limit(15);
+
+    if (recentEmails && recentEmails.length > 0) {
+      contextParts.push(`RECENT EMAILS (${recentEmails.length}):
+${recentEmails.map((e) => {
+        const orgName = (e.organizations as unknown as { name: string } | null)?.name;
+        const ai = e.ai_extraction as Record<string, unknown> | null;
+        const urgency = ai?.reply_urgency ? ` [reply: ${ai.reply_urgency}]` : '';
+        const commitments = Array.isArray(ai?.commitments) ? ` | Extracted: ${(ai.commitments as Array<{ title: string }>).map((c) => c.title).join('; ')}` : '';
+        return `- ${new Date(e.received_at).toLocaleDateString()}: "${e.subject}" from ${e.sender}${orgName ? ' (' + orgName + ')' : ''}${urgency}${commitments}${e.body_preview ? '\n  Preview: ' + e.body_preview.substring(0, 150) : ''}`;
+      }).join('\n')}`);
+    }
+
+    // Fetch engagements (workstreams, contracts, financial context)
+    const { data: engagements } = await supabase
+      .from('engagements')
+      .select('name, type, status, value_amount, start_date, end_date, notes, org_id, organizations(name)')
+      .in('status', ['active', 'pending'])
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (engagements && engagements.length > 0) {
+      contextParts.push(`ACTIVE ENGAGEMENTS/WORKSTREAMS:
+${engagements.map((e) => {
+        const orgName = (e.organizations as unknown as { name: string } | null)?.name;
+        return `- ${e.name} (${e.type || 'unknown type'}, ${e.status})${orgName ? ' — ' + orgName : ''}${e.value_amount ? ' | $' + Number(e.value_amount).toLocaleString() : ''}${e.start_date ? ' | Started: ' + e.start_date : ''}${e.end_date ? ' | Ends: ' + e.end_date : ''}${e.notes ? ' | ' + e.notes.substring(0, 100) : ''}`;
+      }).join('\n')}`);
+    }
+
+    // Fetch recent briefing summaries (so chat can reference them)
+    const { data: recentBriefings } = await supabase
+      .from('briefings')
+      .select('briefing_type, summary, generated_at')
+      .order('generated_at', { ascending: false })
+      .limit(3);
+
+    if (recentBriefings && recentBriefings.length > 0) {
+      contextParts.push(`RECENT BRIEFINGS:
+${recentBriefings.map((b) => {
+        const summary = b.summary as Record<string, unknown> | null;
+        return `- ${b.briefing_type} briefing (${new Date(b.generated_at).toLocaleDateString()}): ${summary ? JSON.stringify(summary).substring(0, 300) : 'No summary'}`;
+      }).join('\n')}`);
     }
 
     // Include recent activity
@@ -1290,7 +1432,9 @@ When an action is needed, return ONLY valid JSON (no markdown fences, no extra t
     {"type": "generate_briefing", "data": {"org_name": "..."}},
     {"type": "search_transcripts", "data": {"query": "..."}},
     {"type": "get_client_health", "data": {"org_name": "..."}},
-    {"type": "get_prep", "data": {"org_name": "..."}}
+    {"type": "get_prep", "data": {"org_name": "..."}},
+    {"type": "create_contact", "data": {"org_name": "...", "name": "...", "role": "...", "email": "...", "relationship_type": "champion|decision_maker|influencer|coach|admin|participant", "notes": "..."}},
+    {"type": "update_contact", "data": {"name": "...", "org_name": "...", "updates": {"role": "...", "email": "...", "notes": "..."}}}
   ]
 }
 
@@ -1303,6 +1447,8 @@ Action guidelines:
 - For generate_draft: include context about what to draft. Use Josh's voice profile for tone.
 - For get_client_health: returns follow-through rates, open/overdue counts, session history.
 - For get_prep: returns session prep including last recap, open items, provocative question, mood trajectory.
+- For create_contact: add a new person to a client org. relationship_type: champion, decision_maker, influencer, coach, admin, participant.
+- For update_contact: update a contact's details. Match by name (+ org_name for disambiguation).
 - Always include the "message" field with a human-readable summary.
 - Only include "actions" when the user is clearly requesting something be done.
 - You can include multiple actions in a single response.
@@ -1331,7 +1477,7 @@ CRITICAL RULES:
     const client = new Anthropic();
     const response = await client.messages.create({
       model: AI_MODEL,
-      max_tokens: 2048,
+      max_tokens: 4096,
       system: systemPrompt,
       messages: claudeMessages,
     });
