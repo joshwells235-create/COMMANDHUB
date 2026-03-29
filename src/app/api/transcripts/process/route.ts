@@ -327,7 +327,24 @@ Compare the current session against the prior sessions. Return JSON only (no mar
       extraction.session_comparison = sessionComparison;
     }
 
-    // 6. Update the transcript record
+    // 6. Clean up existing data from prior processing (safe reprocess)
+    // Delete old commitments sourced from this transcript (cascades to activity)
+    const { data: oldCommitments } = await supabase
+      .from('commitments')
+      .select('id')
+      .eq('source_type', 'transcript')
+      .eq('source_ref', transcript_id);
+
+    if (oldCommitments && oldCommitments.length > 0) {
+      const oldIds = oldCommitments.map((c) => c.id);
+      await supabase.from('commitment_activity').delete().in('commitment_id', oldIds);
+      await supabase.from('commitments').delete().in('id', oldIds);
+    }
+
+    // Delete old transcript chunks
+    await supabase.from('transcript_chunks').delete().eq('transcript_id', transcript_id);
+
+    // 6b. Update the transcript record
     await supabase
       .from('transcripts')
       .update({
