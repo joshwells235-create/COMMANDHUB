@@ -10,7 +10,17 @@ interface WaitingOnListProps {
 }
 
 export function WaitingOnList({ commitments, onReceived }: WaitingOnListProps) {
-  if (commitments.length === 0) return null;
+  if (commitments.length === 0) {
+    return (
+      <div>
+        <h2 className="section-title mb-3">Waiting On</h2>
+        <div className="flex flex-col items-center py-6 text-center">
+          <Check className="w-8 h-8 text-success/40 mb-2" />
+          <p className="text-sm text-muted">Nothing pending from others.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

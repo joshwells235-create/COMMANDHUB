@@ -62,6 +62,7 @@ export function CommandPalette({
     { id: 'nav-followups', label: 'Follow-ups', sublabel: 'Follow-up queue', icon: PhoneForwarded, action: () => navigate('/follow-ups'), category: 'navigate' },
     { id: 'nav-settings', label: 'Settings', sublabel: 'Manage configuration', icon: Settings, action: () => navigate('/settings'), category: 'navigate' },
     { id: 'nav-analytics', label: 'Analytics', sublabel: 'Weekly scorecard', icon: BarChart3, action: () => navigate('/analytics'), category: 'navigate' },
+    { id: 'nav-briefings', label: 'Briefings', sublabel: 'Morning & weekly briefings', icon: FileText, action: () => navigate('/briefings'), category: 'navigate' },
     // Actions
     {
       id: 'act-new-commitment',

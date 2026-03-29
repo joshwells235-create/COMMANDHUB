@@ -85,7 +85,11 @@ export function LifecycleTracker() {
         <h2 className="section-title mb-3">
           Engagement Lifecycle
         </h2>
-        <p className="text-sm text-muted/60 py-3">No active clients to track.</p>
+        <div className="flex flex-col items-center py-6 text-center">
+          <Activity className="w-8 h-8 text-muted/30 mb-2" />
+          <p className="text-sm text-muted">No lifecycle data yet.</p>
+          <p className="text-xs text-muted/60 mt-0.5">Add clients and sessions to see engagement stages.</p>
+        </div>
       </div>
     );
   }

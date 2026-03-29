@@ -81,7 +81,11 @@ export function ClientPulse() {
         <h2 className="section-title mb-3">
           Client Pulse
         </h2>
-        <p className="text-sm text-muted/60 py-3">No active clients.</p>
+        <div className="flex flex-col items-center py-6 text-center">
+          <Building2 className="w-8 h-8 text-muted/30 mb-2" />
+          <p className="text-sm text-muted">No active clients yet.</p>
+          <p className="text-xs text-muted/60 mt-0.5">Add clients to see their pulse here.</p>
+        </div>
       </div>
     );
   }

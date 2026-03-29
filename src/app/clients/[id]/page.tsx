@@ -40,6 +40,7 @@ import {
 } from '@/lib/utils';
 import { SnoozePicker } from '@/components/ui/snooze-picker';
 import { DraftComposer } from '@/components/drafts/draft-composer';
+import { InteractionTimeline } from '@/components/clients/interaction-timeline';
 import { format, formatDistanceToNow } from 'date-fns';
 
 export default function ClientDetailPage() {
@@ -1137,6 +1138,23 @@ export default function ClientDetailPage() {
             </div>
           )}
         </section>
+
+        {/* Visual Interaction Timeline */}
+        {timelineEntries.length > 0 && (
+          <section className="bg-card rounded-xl border border-border p-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">
+              Interaction Map
+            </h2>
+            <InteractionTimeline
+              events={timelineEntries.map((e) => ({
+                date: e.date,
+                type: e.type as 'transcript' | 'commitment',
+                title: e.title,
+                id: e.id,
+              }))}
+            />
+          </section>
+        )}
 
         {/* Relationship Timeline */}
         <section>

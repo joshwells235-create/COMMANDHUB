@@ -392,8 +392,7 @@ Important rules:
     const recipient = process.env.JOSH_EMAIL || 'josh@example.com';
     await sendEmail(recipient, `Morning Briefing — ${todayStr}`, htmlContent);
 
-    return NextResponse.json({
-      success: true,
+    const summary = {
       date: todayStr,
       events_count: (events || []).length,
       overdue_count: (overdueCommitments || []).length,
@@ -402,7 +401,16 @@ Important rules:
       completed_24h_count: (recentlyCompleted || []).length,
       relationship_alerts_count: relationshipAlerts.length,
       replies_needed: needsReply.length,
+    };
+
+    // Store in briefings table
+    await supabase.from('briefings').insert({
+      briefing_type: 'morning',
+      html_content: htmlContent,
+      summary,
     });
+
+    return NextResponse.json({ success: true, ...summary });
   } catch (error) {
     console.error('Morning briefing error:', error);
     return NextResponse.json(

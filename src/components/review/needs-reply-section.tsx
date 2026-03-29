@@ -30,7 +30,17 @@ export function NeedsReplySection({ emails }: NeedsReplySectionProps) {
     return urgencyOrder[urgA] - urgencyOrder[urgB];
   });
 
-  if (sorted.length === 0) return null;
+  if (sorted.length === 0) {
+    return (
+      <div>
+        <h2 className="section-title mb-3">Reply Needed</h2>
+        <div className="flex flex-col items-center py-6 text-center">
+          <MessageSquare className="w-8 h-8 text-success/40 mb-2" />
+          <p className="text-sm text-muted">Inbox zero — no replies needed.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

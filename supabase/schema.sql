@@ -175,6 +175,17 @@ CREATE TABLE auth_tokens (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Briefings: stored copies of morning/weekly briefing emails
+CREATE TABLE briefings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  briefing_type TEXT NOT NULL, -- 'morning' or 'weekly'
+  html_content TEXT NOT NULL,
+  summary JSONB, -- counts/metadata from the generation
+  generated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_briefings_type_date ON briefings(briefing_type, generated_at DESC);
+
 -- ============================================================
 -- INDEXES
 -- ============================================================

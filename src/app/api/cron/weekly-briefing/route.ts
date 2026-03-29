@@ -435,8 +435,7 @@ Important rules:
     const recipient = process.env.JOSH_EMAIL || 'josh@example.com';
     await sendEmail(recipient, `Weekly Practice Report — ${weekLabel}`, htmlContent);
 
-    return NextResponse.json({
-      success: true,
+    const summary = {
       week_ending: todayStr,
       sessions_count: sessionsCount,
       commitments_created: commitmentsCreatedCount,
@@ -448,7 +447,16 @@ Important rules:
       cooling_clients: clientHealthData.filter((c) => c.health_status === 'cooling').length,
       overdue_count: (allOverdue || []).length,
       next_week_events: (nextWeekEvents || []).length,
+    };
+
+    // Store in briefings table
+    await supabase.from('briefings').insert({
+      briefing_type: 'weekly',
+      html_content: htmlContent,
+      summary,
     });
+
+    return NextResponse.json({ success: true, ...summary });
   } catch (error) {
     console.error('Weekly briefing error:', error);
     return NextResponse.json(

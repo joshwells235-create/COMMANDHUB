@@ -59,8 +59,10 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
       </h2>
 
       {events.length === 0 ? (
-        <div className="bg-card rounded-lg p-4">
-          <p className="text-sm text-muted">No events today. Focus time.</p>
+        <div className="flex flex-col items-center py-6 text-center">
+          <Zap className="w-8 h-8 text-primary/40 mb-2" />
+          <p className="text-sm font-medium text-muted">Clear calendar</p>
+          <p className="text-xs text-muted/60 mt-0.5">No events today — deep work time.</p>
         </div>
       ) : (
         <div className="bg-card rounded-lg divide-y divide-border overflow-hidden">

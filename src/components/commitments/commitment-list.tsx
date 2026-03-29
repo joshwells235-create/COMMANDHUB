@@ -1,11 +1,27 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Clock, X, AlertTriangle, Pencil, Save, Loader2 } from 'lucide-react';
+import { Check, Clock, X, AlertTriangle, Pencil, Save, Loader2, CheckCircle2, Target, GripVertical } from 'lucide-react';
 import type { Commitment, CommitmentType } from '@/types/database';
 import { getDueLabel, getCommitmentTypeLabel, getEscalationIndicator, cn } from '@/lib/utils';
 import { SnoozePicker } from '@/components/ui/snooze-picker';
 import { formatDistanceToNow } from 'date-fns';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const COMMITMENT_TYPES: { value: CommitmentType; label: string }[] = [
   { value: 'promise_made', label: 'Promise Made' },
@@ -27,6 +43,30 @@ interface CommitmentListProps {
   onCancel: (id: string) => void;
   onUpdate?: (id: string, updates: Record<string, unknown>) => Promise<void>;
   showActions?: boolean;
+  sortable?: boolean;
+}
+
+function SortableHandle() {
+  return (
+    <div className="flex-shrink-0 cursor-grab active:cursor-grabbing text-muted/40 hover:text-muted touch-none">
+      <GripVertical className="w-3.5 h-3.5" />
+    </div>
+  );
+}
+
+function SortableWrapper({ id, children, disabled }: { id: string; children: React.ReactNode; disabled?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
+    </div>
+  );
 }
 
 export function CommitmentList({
@@ -38,12 +78,45 @@ export function CommitmentList({
   onCancel,
   onUpdate,
   showActions = true,
+  sortable = false,
 }: CommitmentListProps) {
   const [snoozeTarget, setSnoozeTarget] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<Record<string, string | null>>({});
   const [saving, setSaving] = useState(false);
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const orderedCommitments = localOrder
+    ? localOrder.map((id) => commitments.find((c) => c.id === id)).filter(Boolean) as Commitment[]
+    : commitments;
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = orderedCommitments.findIndex((c) => c.id === active.id);
+    const newIndex = orderedCommitments.findIndex((c) => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newOrder = [...orderedCommitments.map((c) => c.id)];
+    newOrder.splice(oldIndex, 1);
+    newOrder.splice(newIndex, 0, active.id as string);
+    setLocalOrder(newOrder);
+
+    // Calculate new priority score based on neighbors
+    if (onUpdate) {
+      const aboveScore = newIndex > 0 ? (orderedCommitments[newIndex > oldIndex ? newIndex : newIndex - 1]?.priority_score ?? 50) : 100;
+      const belowScore = newIndex < orderedCommitments.length - 1 ? (orderedCommitments[newIndex < oldIndex ? newIndex : newIndex + 1]?.priority_score ?? 0) : 0;
+      const newScore = Math.round((aboveScore + belowScore) / 2);
+      onUpdate(active.id as string, { priority_score: newScore, manual_priority_override: true });
+    }
+  }
 
   function startEditing(c: Commitment) {
     setEditingId(c.id);
@@ -84,10 +157,15 @@ export function CommitmentList({
       </h2>
 
       {commitments.length === 0 ? (
-        <p className="text-sm text-muted/60 py-3">{emptyMessage}</p>
+        <div className="flex flex-col items-center py-6 text-center">
+          <CheckCircle2 className="w-8 h-8 text-success/40 mb-2" />
+          <p className="text-sm text-muted">{emptyMessage}</p>
+        </div>
       ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={orderedCommitments.map((c) => c.id)} strategy={verticalListSortingStrategy}>
         <div className="space-y-1">
-          {commitments.map((c) => {
+          {orderedCommitments.map((c) => {
             const escalation = getEscalationIndicator(c.escalation_level);
             const dueLabel = getDueLabel(c.due_date, c.status);
             const isOverdue = c.due_date && new Date(c.due_date) < new Date();
@@ -98,8 +176,8 @@ export function CommitmentList({
               : '';
 
             return (
+              <SortableWrapper key={c.id} id={c.id} disabled={!sortable || !!editingId}>
               <div
-                key={c.id}
                 className="bg-card rounded-lg hover:bg-card-hover transition-all border border-transparent hover:border-border"
               >
                 <button
@@ -108,6 +186,11 @@ export function CommitmentList({
                   }}
                   className="w-full text-left px-4 py-3 flex items-start gap-3"
                 >
+                  {sortable && (
+                    <div className="flex-shrink-0 mt-1">
+                      <SortableHandle />
+                    </div>
+                  )}
                   <div className="flex-shrink-0 mt-0.5">
                     {escalation ? (
                       <span className="text-danger font-bold text-xs">{escalation}</span>
@@ -257,9 +340,12 @@ export function CommitmentList({
                   </div>
                 )}
               </div>
+              </SortableWrapper>
             );
           })}
         </div>
+        </SortableContext>
+        </DndContext>
       )}
 
       {snoozeTarget && (

@@ -20,6 +20,8 @@ import { ActivityFeed } from '@/components/dashboard/activity-feed';
 import { FollowUpWidget } from '@/components/dashboard/follow-up-widget';
 import { IntelligencePanel } from '@/components/dashboard/intelligence-panel';
 import { CommandPalette } from '@/components/ui/command-palette';
+import { KeyboardShortcuts } from '@/components/ui/keyboard-shortcuts';
+import { Sparkline } from '@/components/ui/sparkline';
 import { isToday, isThisWeek } from 'date-fns';
 
 export default function FocusView() {
@@ -74,6 +76,11 @@ export default function FocusView() {
 
     return { overdue, dueToday, thisWeek, waitingOn: waitingOn.length };
   }, [commitments, waitingOn]);
+
+  const [trends, setTrends] = useState<{ overdue: number[]; dueToday: number[]; completed: number[]; waiting: number[] } | null>(null);
+  useEffect(() => {
+    fetch('/api/stats/trends').then(r => r.json()).then(setTrends).catch(() => {});
+  }, []);
 
   if (commitmentsLoading) {
     return (
@@ -173,18 +180,22 @@ export default function FocusView() {
             <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
               <p className="text-2xl font-bold text-danger stat-number">{stats.overdue}</p>
               <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Overdue</p>
+              {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.overdue} color="#ef4444" /></div>}
             </button>
             <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
               <p className="text-2xl font-bold text-warning stat-number">{stats.dueToday}</p>
               <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Due Today</p>
+              {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.dueToday} color="#eab308" /></div>}
             </button>
             <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
               <p className="text-2xl font-bold text-primary stat-number">{stats.thisWeek}</p>
               <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">This Week</p>
+              {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.completed} color="#06b6d4" /></div>}
             </button>
             <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
               <p className="text-2xl font-bold text-orange-400 stat-number">{stats.waitingOn}</p>
               <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Waiting On</p>
+              {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.waiting} color="#fb923c" /></div>}
             </button>
           </div>
 
@@ -203,6 +214,7 @@ export default function FocusView() {
               onSnooze={snoozeCommitment}
               onCancel={cancelCommitment}
               onUpdate={updateCommitment}
+              sortable
             />
           </div>
 
@@ -264,6 +276,8 @@ export default function FocusView() {
                 onComplete={completeCommitment}
                 onSnooze={snoozeCommitment}
                 onCancel={cancelCommitment}
+                onUpdate={updateCommitment}
+                sortable
               />
             </div>
 
@@ -282,18 +296,22 @@ export default function FocusView() {
               <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
                 <p className="text-2xl font-bold text-danger stat-number">{stats.overdue}</p>
                 <p className="text-xs text-muted">Overdue</p>
+                {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.overdue} color="#ef4444" /></div>}
               </button>
               <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
                 <p className="text-2xl font-bold text-warning stat-number">{stats.dueToday}</p>
                 <p className="text-xs text-muted">Due Today</p>
+                {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.dueToday} color="#eab308" /></div>}
               </button>
               <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
                 <p className="text-2xl font-bold text-primary stat-number">{stats.thisWeek}</p>
                 <p className="text-xs text-muted">This Week</p>
+                {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.completed} color="#06b6d4" /></div>}
               </button>
               <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
                 <p className="text-2xl font-bold text-orange-400 stat-number">{stats.waitingOn}</p>
                 <p className="text-xs text-muted">Waiting On</p>
+                {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.waiting} color="#fb923c" /></div>}
               </button>
             </div>
 
@@ -367,6 +385,11 @@ export default function FocusView() {
         onOpenQuickAdd={() => setShowQuickAdd(true)}
       />
       <CmdKListener onOpen={() => setCommandPaletteOpen(true)} />
+      <KeyboardShortcuts
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        onOpenQuickAdd={() => setShowQuickAdd(true)}
+        onOpenChat={() => setChatOpen(true)}
+      />
     </div>
   );
 }
