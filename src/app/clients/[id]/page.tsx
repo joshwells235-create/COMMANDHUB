@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import {
   Zap,
   ArrowLeft,
@@ -88,7 +89,8 @@ export default function ClientDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editFields),
       });
-      if (!res.ok) throw new Error('Failed to save');
+      if (!res.ok) { toast.error('Failed to save client'); throw new Error('Failed to save'); }
+      toast.success('Client updated');
       setEditing(false);
       refresh();
     } catch {
@@ -178,7 +180,8 @@ export default function ClientDetailPage() {
           notes: contactEditFields.notes || null,
         }),
       });
-      if (!res.ok) throw new Error('Failed to update');
+      if (!res.ok) { toast.error('Failed to save contact'); throw new Error('Failed to update'); }
+      toast.success('Contact updated');
       setEditingContactId(null);
       refresh();
     } catch {
@@ -219,7 +222,8 @@ export default function ClientDetailPage() {
           other_party: commitEditFields.other_party || null,
         }),
       });
-      if (!res.ok) throw new Error('Failed to update');
+      if (!res.ok) { toast.error('Failed to save commitment'); throw new Error('Failed to update'); }
+      toast.success('Commitment updated');
       setEditingCommitmentId(null);
       refresh();
     } catch {

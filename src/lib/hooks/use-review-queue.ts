@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import type { ReviewEmail } from '@/types/database';
 
 export function useReviewQueue() {
@@ -26,23 +27,25 @@ export function useReviewQueue() {
     fetchEmails();
   }, [fetchEmails]);
 
-  const acceptAll = async (emailId: string) => {
+  const acceptAll = async (emailId: string, edits?: Record<number, { title?: string; commitment_type?: string; suggested_due?: string | null }>) => {
     const res = await fetch(`/api/review/${emailId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'accept_all' }),
+      body: JSON.stringify({ action: 'accept_all', edits }),
     });
-    if (!res.ok) throw new Error('Failed to accept all commitments');
+    if (!res.ok) { toast.error('Failed to accept commitments'); throw new Error('Failed to accept'); }
+    toast.success('Commitments accepted');
     await fetchEmails();
   };
 
-  const acceptSelected = async (emailId: string, indices: number[]) => {
+  const acceptSelected = async (emailId: string, indices: number[], edits?: Record<number, { title?: string; commitment_type?: string; suggested_due?: string | null }>) => {
     const res = await fetch(`/api/review/${emailId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'accept_selected', selected_indices: indices }),
+      body: JSON.stringify({ action: 'accept_selected', selected_indices: indices, edits }),
     });
-    if (!res.ok) throw new Error('Failed to accept selected commitments');
+    if (!res.ok) { toast.error('Failed to accept selected'); throw new Error('Failed to accept'); }
+    toast.success(`${indices.length} commitment${indices.length !== 1 ? 's' : ''} accepted`);
     await fetchEmails();
   };
 
@@ -52,7 +55,8 @@ export function useReviewQueue() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'dismiss' }),
     });
-    if (!res.ok) throw new Error('Failed to dismiss email');
+    if (!res.ok) { toast.error('Failed to dismiss'); throw new Error('Failed to dismiss'); }
+    toast.success('Email dismissed');
     await fetchEmails();
   };
 

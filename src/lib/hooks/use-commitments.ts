@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import type { Commitment, CommitmentCreateInput } from '@/types/database';
 
 interface UseCommitmentsOptions {
@@ -45,8 +46,9 @@ export function useCommitments(options: UseCommitmentsOptions = {}) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     });
-    if (!res.ok) throw new Error('Failed to create commitment');
+    if (!res.ok) { toast.error('Failed to create commitment'); throw new Error('Failed to create commitment'); }
     const data = await res.json();
+    toast.success('Commitment created');
     await fetchCommitments();
     return data;
   };
@@ -55,7 +57,8 @@ export function useCommitments(options: UseCommitmentsOptions = {}) {
     const res = await fetch(`/api/commitments/${id}/complete`, {
       method: 'POST',
     });
-    if (!res.ok) throw new Error('Failed to complete commitment');
+    if (!res.ok) { toast.error('Failed to complete'); throw new Error('Failed to complete commitment'); }
+    toast.success('Marked as done');
     await fetchCommitments();
   };
 
@@ -65,7 +68,8 @@ export function useCommitments(options: UseCommitmentsOptions = {}) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ snoozed_until: snoozedUntil }),
     });
-    if (!res.ok) throw new Error('Failed to snooze commitment');
+    if (!res.ok) { toast.error('Failed to snooze'); throw new Error('Failed to snooze commitment'); }
+    toast.success('Snoozed');
     await fetchCommitments();
   };
 
@@ -73,7 +77,8 @@ export function useCommitments(options: UseCommitmentsOptions = {}) {
     const res = await fetch(`/api/commitments/${id}`, {
       method: 'DELETE',
     });
-    if (!res.ok) throw new Error('Failed to cancel commitment');
+    if (!res.ok) { toast.error('Failed to cancel'); throw new Error('Failed to cancel commitment'); }
+    toast.success('Cancelled');
     await fetchCommitments();
   };
 
@@ -83,7 +88,8 @@ export function useCommitments(options: UseCommitmentsOptions = {}) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
-    if (!res.ok) throw new Error('Failed to update commitment');
+    if (!res.ok) { toast.error('Failed to update'); throw new Error('Failed to update commitment'); }
+    toast.success('Commitment updated');
     await fetchCommitments();
   };
 

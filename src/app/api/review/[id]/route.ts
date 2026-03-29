@@ -40,7 +40,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { action, selected_indices } = await request.json();
+    const { action, selected_indices, edits } = await request.json();
 
     if (!action || !['accept_all', 'accept_selected', 'dismiss'].includes(action)) {
       return NextResponse.json(
@@ -113,21 +113,29 @@ export async function POST(
     // Create commitments
     const createdCommitments: string[] = [];
 
-    for (const item of commitmentsToCreate) {
-      const commitmentType = VALID_COMMITMENT_TYPES.includes(item.commitment_type as CommitmentType)
-        ? item.commitment_type
+    for (let idx = 0; idx < commitmentsToCreate.length; idx++) {
+      const item = commitmentsToCreate[idx];
+      // Apply user edits if provided (keyed by original index in the extraction array)
+      const originalIdx = action === 'accept_all' ? idx : (selected_indices?.[idx] ?? idx);
+      const edit = edits?.[originalIdx];
+      const finalTitle = edit?.title || item.title;
+      const finalType = edit?.commitment_type || item.commitment_type;
+      const finalDue = edit?.suggested_due !== undefined ? (edit.suggested_due || null) : (item.suggested_due || null);
+
+      const commitmentType = VALID_COMMITMENT_TYPES.includes(finalType as CommitmentType)
+        ? finalType
         : 'follow_up';
 
       const { data: commitment, error: insertError } = await supabase
         .from('commitments')
         .insert({
-          title: item.title,
+          title: finalTitle,
           description: item.description || null,
           commitment_type: commitmentType,
           org_id: matchedOrgId,
           other_party: item.other_party || null,
           owner: item.owner || 'josh',
-          due_date: item.suggested_due || null,
+          due_date: finalDue,
           source_type: 'email',
           source_ref: email.id,
           source_snippet: item.source_quote || null,

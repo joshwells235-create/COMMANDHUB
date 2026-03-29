@@ -18,6 +18,7 @@ import {
   Save,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 interface TranscriptData {
   id: string;
@@ -75,8 +76,9 @@ export default function TranscriptDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(metaFields),
       });
-      if (!res.ok) throw new Error('Failed to save');
+      if (!res.ok) { toast.error('Failed to save'); throw new Error('Failed to save'); }
       const data = await res.json();
+      toast.success('Transcript updated');
       setTranscript((prev) => prev ? { ...prev, ...metaFields, ...(data.transcript || {}) } : prev);
       setEditingMeta(false);
     } catch {
@@ -122,9 +124,9 @@ export default function TranscriptDetailPage() {
       if (!res.ok) throw new Error('Replace failed');
       const data = await res.json();
 
-      setReplaceResult(
-        `Replaced ${data.replacements} occurrence${data.replacements !== 1 ? 's' : ''} in transcript, ${data.chunks_updated} search chunk${data.chunks_updated !== 1 ? 's' : ''} updated`
-      );
+      const msg = `Replaced ${data.replacements} occurrence${data.replacements !== 1 ? 's' : ''}`;
+      setReplaceResult(msg + `, ${data.chunks_updated} search chunk${data.chunks_updated !== 1 ? 's' : ''} updated`);
+      toast.success(msg);
 
       // Refresh the transcript to show updated text
       if (data.transcript?.raw_text) {

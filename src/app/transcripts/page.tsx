@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { ArrowLeft, Zap, Upload, FileText, Loader2, CheckCircle, X, Plus } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
 
 const TRANSCRIPT_TYPES = [
@@ -115,8 +116,11 @@ export default function TranscriptsPage() {
       const processResult = await processRes.json();
 
       setResult({ summary: processResult.summary || processResult.extraction?.summary || 'Processing complete.' });
+      toast.success('Transcript processed successfully');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      const msg = err instanceof Error ? err.message : 'Something went wrong';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setProcessing(false);
     }

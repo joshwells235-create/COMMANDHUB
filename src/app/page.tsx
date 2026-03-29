@@ -16,6 +16,7 @@ import { TodayEvents } from '@/components/calendar/today-events';
 import { NeedsReplySection } from '@/components/review/needs-reply-section';
 import { CommandHubChat } from '@/components/chat/command-hub-chat';
 import { ClientPulse } from '@/components/dashboard/client-pulse';
+import { ActivityFeed } from '@/components/dashboard/activity-feed';
 import { FollowUpWidget } from '@/components/dashboard/follow-up-widget';
 import { IntelligencePanel } from '@/components/dashboard/intelligence-panel';
 import { isToday, isThisWeek } from 'date-fns';
@@ -222,6 +223,11 @@ export default function FocusView() {
           <div className="bg-card rounded-xl border border-border p-4">
             <ClientPulse />
           </div>
+
+          {/* 10. Activity Feed */}
+          <div className="bg-card rounded-xl border border-border p-4">
+            <ActivityFeed />
+          </div>
         </div>
 
         {/* DESKTOP LAYOUT */}
@@ -302,6 +308,11 @@ export default function FocusView() {
             {/* Client Pulse */}
             <div className="bg-card rounded-xl border border-border p-4">
               <ClientPulse />
+            </div>
+
+            {/* Activity Feed */}
+            <div className="bg-card rounded-xl border border-border p-4">
+              <ActivityFeed />
             </div>
           </div>
         </div>

@@ -1,17 +1,28 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Check, CheckSquare, X, Edit2, Mail } from 'lucide-react';
-import type { ReviewEmail } from '@/types/database';
+import { Check, CheckSquare, X, Edit2, Mail, Save, Pencil } from 'lucide-react';
+import type { ReviewEmail, CommitmentType } from '@/types/database';
 import { getCommitmentTypeLabel, getCommitmentTypeColor, cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
 interface EmailReviewCardProps {
   email: ReviewEmail;
-  onAcceptAll: (emailId: string) => void;
-  onAcceptSelected: (emailId: string, indices: number[]) => void;
+  onAcceptAll: (emailId: string, edits?: Record<number, { title?: string; commitment_type?: string; suggested_due?: string | null }>) => void;
+  onAcceptSelected: (emailId: string, indices: number[], edits?: Record<number, { title?: string; commitment_type?: string; suggested_due?: string | null }>) => void;
   onDismiss: (emailId: string) => void;
 }
+
+const COMMITMENT_TYPES: { value: CommitmentType; label: string }[] = [
+  { value: 'promise_made', label: 'Promise Made' },
+  { value: 'ask_received', label: 'Ask Received' },
+  { value: 'follow_up', label: 'Follow Up' },
+  { value: 'waiting_on', label: 'Waiting On' },
+  { value: 'deliverable', label: 'Deliverable' },
+  { value: 'prep', label: 'Prep' },
+  { value: 'internal', label: 'Internal' },
+  { value: 'note_to_self', label: 'Note to Self' },
+];
 
 export function EmailReviewCard({
   email,
@@ -21,6 +32,8 @@ export function EmailReviewCard({
 }: EmailReviewCardProps) {
   const commitments = email.ai_extraction?.commitments ?? [];
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [edits, setEdits] = useState<Record<number, { title: string; commitment_type: string; suggested_due: string }>>({});
   const [swipeX, setSwipeX] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const touchStartX = useRef(0);
@@ -143,39 +156,90 @@ export function EmailReviewCard({
               AI found:
             </p>
             <div className="space-y-1.5">
-              {commitments.map((c, i) => (
-                <label
-                  key={i}
-                  className="flex items-start gap-2 cursor-pointer group"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.has(i)}
-                    onChange={() => toggleSelection(i)}
-                    className="mt-1 rounded border-border accent-primary"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm group-hover:text-foreground transition-colors">
-                        {c.title}
-                      </span>
-                      <span
-                        className={cn(
-                          'text-xs px-1.5 py-0.5 rounded-full bg-card-hover',
-                          getCommitmentTypeColor(c.commitment_type)
-                        )}
+              {commitments.map((c, i) => {
+                const edited = edits[i];
+                const displayTitle = edited?.title ?? c.title;
+                const displayType = edited?.commitment_type ?? c.commitment_type;
+                const displayDue = edited?.suggested_due ?? c.suggested_due;
+                const isEditing = editingIdx === i;
+
+                if (isEditing) {
+                  return (
+                    <div key={i} className="bg-background rounded-md p-2 space-y-1.5 border border-border">
+                      <input
+                        type="text"
+                        value={edited?.title ?? c.title}
+                        onChange={(e) => setEdits({ ...edits, [i]: { ...edits[i], title: e.target.value, commitment_type: edits[i]?.commitment_type ?? c.commitment_type, suggested_due: edits[i]?.suggested_due ?? c.suggested_due ?? '' } })}
+                        className="w-full bg-card border border-border rounded px-2 py-1 text-sm focus:outline-none focus:border-primary"
+                      />
+                      <div className="flex gap-2">
+                        <select
+                          value={edited?.commitment_type ?? c.commitment_type}
+                          onChange={(e) => setEdits({ ...edits, [i]: { ...edits[i], title: edits[i]?.title ?? c.title, commitment_type: e.target.value, suggested_due: edits[i]?.suggested_due ?? c.suggested_due ?? '' } })}
+                          className="flex-1 bg-card border border-border rounded px-2 py-1 text-xs"
+                        >
+                          {COMMITMENT_TYPES.map((t) => (
+                            <option key={t.value} value={t.value}>{t.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="date"
+                          value={(edited?.suggested_due ?? c.suggested_due ?? '').split('T')[0]}
+                          onChange={(e) => setEdits({ ...edits, [i]: { ...edits[i], title: edits[i]?.title ?? c.title, commitment_type: edits[i]?.commitment_type ?? c.commitment_type, suggested_due: e.target.value } })}
+                          className="flex-1 bg-card border border-border rounded px-2 py-1 text-xs"
+                        />
+                      </div>
+                      <button
+                        onClick={() => setEditingIdx(null)}
+                        className="flex items-center gap-1 text-xs text-primary hover:text-primary/80"
                       >
-                        {getCommitmentTypeLabel(c.commitment_type)}
-                      </span>
+                        <Save className="w-3 h-3" /> Done
+                      </button>
                     </div>
-                    {c.suggested_due && (
-                      <span className="text-xs text-muted">
-                        Due {format(new Date(c.suggested_due), 'MMM d')}
-                      </span>
-                    )}
-                  </div>
-                </label>
-              ))}
+                  );
+                }
+
+                return (
+                  <label
+                    key={i}
+                    className="flex items-start gap-2 cursor-pointer group"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.has(i)}
+                      onChange={() => toggleSelection(i)}
+                      className="mt-1 rounded border-border accent-primary"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn('text-sm group-hover:text-foreground transition-colors', edited && 'text-primary')}>
+                          {displayTitle}
+                        </span>
+                        <span
+                          className={cn(
+                            'text-xs px-1.5 py-0.5 rounded-full bg-card-hover',
+                            getCommitmentTypeColor(displayType)
+                          )}
+                        >
+                          {getCommitmentTypeLabel(displayType)}
+                        </span>
+                        <button
+                          onClick={(e) => { e.preventDefault(); setEditingIdx(i); }}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 text-muted hover:text-primary transition-all"
+                          title="Edit before accepting"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      </div>
+                      {displayDue && (
+                        <span className="text-xs text-muted">
+                          Due {format(new Date(displayDue), 'MMM d')}
+                        </span>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           </div>
         )}
@@ -183,13 +247,13 @@ export function EmailReviewCard({
         {/* Action buttons */}
         <div className="flex items-center gap-2 mt-4">
           <button
-            onClick={() => onAcceptAll(email.id)}
+            onClick={() => onAcceptAll(email.id, Object.keys(edits).length > 0 ? edits : undefined)}
             className="flex items-center gap-1 px-3 py-1.5 bg-success/20 text-success rounded-md text-xs font-medium hover:bg-success/30 transition-colors"
           >
             <Check className="w-3 h-3" /> Accept All
           </button>
           <button
-            onClick={() => onAcceptSelected(email.id, Array.from(selected))}
+            onClick={() => onAcceptSelected(email.id, Array.from(selected), Object.keys(edits).length > 0 ? edits : undefined)}
             disabled={selected.size === 0}
             className={cn(
               'flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
@@ -200,12 +264,6 @@ export function EmailReviewCard({
           >
             <CheckSquare className="w-3 h-3" /> Accept Selected
             {selected.size > 0 && ` (${selected.size})`}
-          </button>
-          <button
-            disabled
-            className="flex items-center gap-1 px-3 py-1.5 bg-card-hover text-muted rounded-md text-xs font-medium cursor-not-allowed"
-          >
-            <Edit2 className="w-3 h-3" /> Edit
           </button>
           <button
             onClick={() => onDismiss(email.id)}
