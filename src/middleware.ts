@@ -9,6 +9,8 @@ const PUBLIC_PATHS = [
   '/api/auth/callback',
   '/api/webhooks/',
   '/api/cron/',
+  '/api/transcripts/reprocess',
+  '/api/transcripts/process',
   '/manifest.json',
   '/sw.js',
   '/icon.svg',
