@@ -32,9 +32,46 @@ interface StructuredResponse {
 // ---------------------------------------------------------------------------
 
 function needsRAG(message: string): boolean {
-  const ragKeywords = ['session', 'said', 'discussed', 'theme', 'transcript', 'mentioned', 'talked about', 'conversation', 'coaching'];
+  const ragKeywords = ['session', 'said', 'discussed', 'theme', 'transcript', 'mentioned', 'talked about', 'conversation', 'coaching', 'worried', 'concerned', 'going on', 'happening', 'issues', 'problems'];
   const lower = message.toLowerCase();
   return ragKeywords.some((kw) => lower.includes(kw));
+}
+
+/**
+ * Match mentioned org names against the actual org list. Handles abbreviations,
+ * partial matches, and case-insensitive matching.
+ */
+function detectMentionedOrgs(
+  message: string,
+  orgs: Array<{ id: string; name: string }>
+): Array<{ id: string; name: string }> {
+  const lower = message.toLowerCase();
+  const matched: Array<{ id: string; name: string }> = [];
+
+  for (const org of orgs) {
+    const orgLower = org.name.toLowerCase();
+    // Exact or substring match
+    if (lower.includes(orgLower)) {
+      matched.push(org);
+      continue;
+    }
+    // Match abbreviation-style names (e.g. "MMG" matches "MMG Insurance")
+    const orgWords = orgLower.split(/\s+/);
+    for (const word of orgWords) {
+      if (word.length >= 3 && lower.includes(word)) {
+        matched.push(org);
+        break;
+      }
+    }
+    // Also check if the org name IS an abbreviation (all caps, 2+ chars)
+    if (org.name.length >= 2 && org.name === org.name.toUpperCase()) {
+      if (lower.includes(org.name.toLowerCase())) {
+        if (!matched.find((m) => m.id === org.id)) matched.push(org);
+      }
+    }
+  }
+
+  return matched;
 }
 
 function detectIntent(message: string): {
@@ -79,9 +116,9 @@ function detectIntent(message: string): {
   ];
   const isAction = actionKeywords.some((kw) => lower.includes(kw));
 
-  // Try to extract a client name (simple heuristic: word after "with" or quoted text)
+  // Client name extraction left for backwards compat — real matching uses detectMentionedOrgs
   let clientName: string | null = null;
-  const withMatch = lower.match(/(?:with|for|about)\s+([a-z][\w\s]*?)(?:\?|$|\.|\s+(?:and|or|but))/);
+  const withMatch = lower.match(/(?:with|for|about|at)\s+([a-z][\w\s]*?)(?:\?|$|\.|\s+(?:and|or|but))/i);
   if (withMatch) {
     clientName = withMatch[1].trim();
   }
@@ -1017,48 +1054,199 @@ ${recentActivity.map((a) => {
       }).join('\n')}`);
     }
 
-    // Text search for transcript-related queries
-    let ragContext = '';
-    if (needsRAG(message)) {
+    // ---------------------------------------------------------------
+    // DEEP CLIENT CONTEXT: When a client is mentioned, auto-fetch
+    // their full data (transcripts, commitments, contacts, health)
+    // ---------------------------------------------------------------
+    const mentionedOrgs = detectMentionedOrgs(message, orgList);
+    for (const org of mentionedOrgs) {
       try {
-        const searchWords = message
+        // Fetch org details
+        const { data: orgDetail } = await supabase
+          .from('organizations')
+          .select('name, industry, status, strategic_value, notes')
+          .eq('id', org.id)
+          .single();
+
+        // Fetch all commitments for this org (open + recent completed)
+        const { data: orgCommitments } = await supabase
+          .from('commitments')
+          .select('id, title, commitment_type, status, due_date, owner, other_party, description, completed_at, created_at')
+          .eq('org_id', org.id)
+          .order('priority_score', { ascending: false })
+          .limit(30);
+
+        // Fetch transcripts with deep detail (summaries, themes, language leaks, insights)
+        const { data: orgTranscripts } = await supabase
+          .from('transcripts')
+          .select('id, title, transcript_date, transcript_type, summary, key_themes, client_insights, session_arc, notable_quotes, recommended_focus_next_session, duration_minutes')
+          .eq('org_id', org.id)
+          .eq('is_processed', true)
+          .order('transcript_date', { ascending: false })
+          .limit(10);
+
+        // Fetch contacts
+        const { data: orgContacts } = await supabase
+          .from('contacts')
+          .select('name, role, email, relationship_type, notes')
+          .eq('org_id', org.id);
+
+        // Fetch calendar events for this client
+        const { data: orgEvents } = await supabase
+          .from('calendar_events')
+          .select('subject, start_time, end_time')
+          .eq('org_id', org.id)
+          .gte('start_time', new Date(Date.now() - 30 * 86400000).toISOString())
+          .order('start_time', { ascending: false })
+          .limit(10);
+
+        // Build health metrics
+        const openCmts = (orgCommitments || []).filter((c) => ['pending', 'in_progress', 'waiting', 'snoozed'].includes(c.status));
+        const overdueCmts = openCmts.filter((c) => c.due_date && new Date(c.due_date) < new Date());
+        const completedCmts = (orgCommitments || []).filter((c) => c.status === 'completed');
+        const totalCmts = orgCommitments?.length || 0;
+        const followThroughRate = totalCmts > 0 ? Math.round((completedCmts.length / totalCmts) * 100) : 0;
+        const lastSession = orgTranscripts?.[0];
+        const daysSinceContact = lastSession
+          ? Math.round((Date.now() - new Date(lastSession.transcript_date).getTime()) / 86400000)
+          : null;
+
+        let clientBlock = `\n\nDEEP CLIENT DATA — ${org.name.toUpperCase()}:
+Organization: ${orgDetail?.name || org.name} | Status: ${orgDetail?.status} | Strategic value: ${orgDetail?.strategic_value} | Industry: ${orgDetail?.industry || 'Unknown'}
+${orgDetail?.notes ? `Notes: ${orgDetail.notes}` : ''}
+Health: ${openCmts.length} open commitments (${overdueCmts.length} overdue) | ${completedCmts.length} completed | Follow-through: ${followThroughRate}%
+${daysSinceContact !== null ? `Days since last session: ${daysSinceContact}` : 'No sessions recorded'}`;
+
+        // Contacts
+        if (orgContacts && orgContacts.length > 0) {
+          clientBlock += `\n\nContacts:
+${orgContacts.map((c) => `- ${c.name}${c.role ? ' (' + c.role + ')' : ''}${c.email ? ' <' + c.email + '>' : ''}${c.relationship_type ? ' [' + c.relationship_type + ']' : ''}${c.notes ? ' — ' + c.notes : ''}`).join('\n')}`;
+        }
+
+        // All open commitments
+        if (openCmts.length > 0) {
+          clientBlock += `\n\nOpen commitments for ${org.name}:
+${openCmts.map((c) => `- [id:${c.id}] [${c.owner}] ${c.title} (${c.commitment_type}, ${c.status}${c.due_date ? ', due ' + c.due_date.split('T')[0] : ''}${c.other_party ? ', other: ' + c.other_party : ''})`).join('\n')}`;
+        }
+
+        // Recent completed
+        if (completedCmts.length > 0) {
+          clientBlock += `\n\nRecently completed for ${org.name}:
+${completedCmts.slice(0, 5).map((c) => `- ${c.title} (completed ${c.completed_at ? c.completed_at.split('T')[0] : 'unknown'})`).join('\n')}`;
+        }
+
+        // Transcripts with summaries, themes, insights
+        if (orgTranscripts && orgTranscripts.length > 0) {
+          clientBlock += `\n\nSession history for ${org.name} (${orgTranscripts.length} sessions):`;
+          for (const t of orgTranscripts) {
+            clientBlock += `\n\n--- ${t.title || t.transcript_type || 'Session'} (${t.transcript_date})${t.duration_minutes ? ' [' + t.duration_minutes + 'min]' : ''} ---`;
+            if (t.summary) clientBlock += `\nSummary: ${t.summary}`;
+            if (t.session_arc) clientBlock += `\nArc: ${t.session_arc}`;
+            if (t.key_themes && Array.isArray(t.key_themes) && t.key_themes.length > 0) {
+              const themes = t.key_themes.map((th: string | { theme: string }) => typeof th === 'string' ? th : th.theme);
+              clientBlock += `\nThemes: ${themes.join(', ')}`;
+            }
+            if (t.client_insights) {
+              const ins = t.client_insights as Record<string, unknown>;
+              if (ins.patterns_observed) clientBlock += `\nPatterns: ${ins.patterns_observed}`;
+              if (ins.breakthroughs) clientBlock += `\nBreakthroughs: ${ins.breakthroughs}`;
+              if (ins.resistance_points) clientBlock += `\nResistance: ${ins.resistance_points}`;
+              if (ins.growth_areas) clientBlock += `\nGrowth areas: ${ins.growth_areas}`;
+              if (ins.emotional_state) clientBlock += `\nEmotional state: ${ins.emotional_state}`;
+              if (ins.engagement_level) clientBlock += `\nEngagement: ${ins.engagement_level}`;
+              if (Array.isArray(ins.language_leaks_observed) && ins.language_leaks_observed.length > 0) {
+                clientBlock += `\nLanguage leaks: ${(ins.language_leaks_observed as Array<{ quote: string; leak_type: string; interpretation: string }>).map((l) => `"${l.quote}" (${l.leak_type}: ${l.interpretation})`).join('; ')}`;
+              }
+            }
+            if (t.notable_quotes && Array.isArray(t.notable_quotes) && t.notable_quotes.length > 0) {
+              clientBlock += `\nNotable quotes: ${(t.notable_quotes as Array<{ quote: string; context: string; speaker: string }>).map((q) => `"${q.quote}" — ${q.speaker}`).join('; ')}`;
+            }
+            if (t.recommended_focus_next_session) clientBlock += `\nRecommended focus: ${t.recommended_focus_next_session}`;
+          }
+        }
+
+        // Recent calendar events
+        if (orgEvents && orgEvents.length > 0) {
+          clientBlock += `\n\nRecent/upcoming meetings with ${org.name}:
+${orgEvents.map((e) => `- ${new Date(e.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: ${e.subject}`).join('\n')}`;
+        }
+
+        contextParts.push(clientBlock);
+      } catch (err) {
+        console.error(`Failed to fetch deep context for ${org.name}:`, err);
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // Always include recent transcript summaries for general awareness
+    // ---------------------------------------------------------------
+    const { data: recentTranscripts } = await supabase
+      .from('transcripts')
+      .select('title, transcript_date, summary, org_id, organizations(name)')
+      .eq('is_processed', true)
+      .order('transcript_date', { ascending: false })
+      .limit(8);
+
+    if (recentTranscripts && recentTranscripts.length > 0) {
+      contextParts.push(`RECENT SESSIONS (across all clients):
+${recentTranscripts.map((t) => {
+  const orgName = (t.organizations as unknown as { name: string } | null)?.name;
+  return `- ${t.transcript_date} [${orgName || 'Unknown'}] ${t.title || 'Untitled'}: ${t.summary ? t.summary.substring(0, 150) : 'No summary'}`;
+}).join('\n')}`);
+    }
+
+    // ---------------------------------------------------------------
+    // Text search for transcript-related queries OR when client mentioned
+    // ---------------------------------------------------------------
+    let ragContext = '';
+    const shouldSearchTranscripts = needsRAG(message) || mentionedOrgs.length > 0;
+    if (shouldSearchTranscripts) {
+      try {
+        // Build search terms: include org names + message keywords
+        const orgSearchTerms = mentionedOrgs.map((o) => o.name.toLowerCase());
+        const messageTerms = message
           .toLowerCase()
           .replace(/[^\w\s]/g, '')
           .split(/\s+/)
-          .filter((w) => w.length > 3)
-          .slice(0, 5)
-          .join(' | ');
+          .filter((w) => w.length > 3);
+        const allTerms = [...new Set([...orgSearchTerms, ...messageTerms])].slice(0, 8);
+        const searchWords = allTerms.join(' | ');
 
-        const { data: chunks } = await supabase
-          .from('transcript_chunks')
-          .select('content, metadata, transcript_id, transcripts(title, transcript_date, organizations(name))')
-          .textSearch('content', searchWords, { type: 'websearch', config: 'english' })
-          .limit(5);
+        if (searchWords) {
+          const { data: chunks } = await supabase
+            .from('transcript_chunks')
+            .select('content, metadata, transcript_id, transcripts(title, transcript_date, organizations(name))')
+            .textSearch('content', searchWords, { type: 'websearch', config: 'english' })
+            .limit(8);
 
-        if (chunks && chunks.length > 0) {
-          ragContext = `\nTRANSCRIPT CONTEXT (from search):
+          if (chunks && chunks.length > 0) {
+            ragContext = `\nTRANSCRIPT SEARCH RESULTS (verbatim excerpts):
 ${chunks
   .map((c: Record<string, unknown>) => {
     const transcripts = c.transcripts as Record<string, unknown>[] | Record<string, unknown> | null;
     const t = Array.isArray(transcripts) ? transcripts[0] : transcripts;
     const orgs = t?.organizations as Record<string, unknown>[] | null;
-    return `[${t?.title || 'Unknown'}, ${t?.transcript_date || 'Unknown'}, ${orgs?.[0]?.name || 'Unknown'}]: ${(c.content as string).substring(0, 300)}`;
+    const orgName = Array.isArray(orgs) ? orgs[0]?.name : (orgs as unknown as Record<string, unknown>)?.name;
+    return `[${t?.title || 'Unknown'}, ${t?.transcript_date || 'Unknown'}, ${orgName || 'Unknown'}]: ${(c.content as string).substring(0, 400)}`;
   })
   .join('\n\n')}`;
-        } else {
-          // Fallback to ILIKE search
-          const { data: fallbackChunks } = await supabase
-            .from('transcript_chunks')
-            .select('content, metadata')
-            .ilike('content', `%${message.split(' ').slice(0, 3).join('%')}%`)
-            .limit(5);
+          } else {
+            // Fallback: search by org name if no full-text results
+            for (const org of mentionedOrgs) {
+              const { data: fallbackChunks } = await supabase
+                .from('transcript_chunks')
+                .select('content, metadata')
+                .ilike('content', `%${org.name}%`)
+                .limit(3);
 
-          if (fallbackChunks && fallbackChunks.length > 0) {
-            ragContext = `\nTRANSCRIPT CONTEXT:
+              if (fallbackChunks && fallbackChunks.length > 0) {
+                ragContext += `\nTRANSCRIPT EXCERPTS mentioning ${org.name}:
 ${fallbackChunks.map((c: Record<string, unknown>) => {
   const meta = c.metadata as Record<string, string> | null;
-  return `[${meta?.org_name || 'Unknown'}, ${meta?.transcript_date || 'Unknown'}]: ${(c.content as string).substring(0, 300)}`;
+  return `[${meta?.org_name || org.name}, ${meta?.transcript_date || 'Unknown'}]: ${(c.content as string).substring(0, 400)}`;
 }).join('\n\n')}`;
+              }
+            }
           }
         }
       } catch (err) {
@@ -1068,19 +1256,24 @@ ${fallbackChunks.map((c: Record<string, unknown>) => {
 
     // Build system prompt
     const todayStr = new Date().toISOString().split('T')[0];
+    const mentionedOrgNames = mentionedOrgs.map((o) => o.name).join(', ');
     const systemPrompt = `You are Command Hub, Josh Wells's AI chief of staff at LeadShift.
 Josh is a leadership development consultant who does sales, coaching, consulting, facilitating, training, and advising for executives and organizations. His core frameworks include Language Leaks (Agency/Identity/Worth), the Signal Model, Predictive Index, Five Dysfunctions of a Team, and EQ-i 2.0.
-You have deep access to Josh's commitments, calendar, client data, transcript history, coaching methodology, and voice profile. You know what he's working on, who needs attention, and what happened recently. Answer conversationally but concisely.
-Josh also uses Command Hub for personal commitments and transcripts. These have category='personal' and may relate to health, family, finance, home, etc. Handle these naturally — don't try to fit them into a client context.
+
+You have FULL ACCESS to Josh's entire database: every commitment, every session transcript (with summaries, themes, language leaks, notable quotes, client insights), every client's health metrics, contacts, calendar events, and recent activity. All of this data is provided below. USE IT. Do not say you lack data or need to search — the data is already in your context.
+
+Josh also uses Command Hub for personal commitments and transcripts. These have category='personal'. Handle these naturally.
 
 Today's date: ${todayStr}
+${mentionedOrgNames ? `Client(s) mentioned in this message: ${mentionedOrgNames}` : ''}
 
-Current data context:
+=== DATA CONTEXT ===
 ${contextParts.join('\n\n')}
 ${ragContext}
+=== END DATA CONTEXT ===
 
 ACTION SYSTEM:
-You are a fully capable chief of staff that can take action on Josh's behalf. When Josh asks you to DO something, return structured JSON. When he asks a QUESTION, respond with plain text.
+You are a fully capable chief of staff that can take action on Josh's behalf. When Josh asks you to DO something, return structured JSON. When he asks a QUESTION, respond with plain text using the data above.
 
 When an action is needed, return ONLY valid JSON (no markdown fences, no extra text) in this format:
 {
@@ -1115,15 +1308,18 @@ Action guidelines:
 - You can include multiple actions in a single response.
 - Use org_id from context when available, fall back to org_name for resolution.
 
-Rules:
-- Be direct, strategic, and actionable — you're Josh's trusted advisor
+CRITICAL RULES:
+- You have the data. USE IT. When Josh asks "How are things going at MMG?" — you have MMG's transcripts, commitments, contacts, health metrics, and session notes RIGHT HERE in your context. Synthesize and answer directly.
+- NEVER say "I don't have enough data" or "I'd need to search" when client data is in your context above.
+- NEVER ask Josh to search or point you to data — you already have it.
+- Be direct, strategic, and actionable — you're Josh's trusted advisor who knows everything
 - If Josh asks "what should I do", give the #1 priority with clear reasoning
-- Cite specific data (dates, client names, commitment titles) — never be vague
+- Cite specific data (dates, client names, commitment titles, quotes from sessions) — never be vague
 - Reference Josh's frameworks when relevant to coaching advice
-- If you don't have enough data, say so honestly
-- Keep responses under 200 words unless Josh asks for detail or a draft/briefing is generated
-- When Josh asks about a client, proactively surface: open commitments, last session, relationship health
-- When Josh asks you to change/edit something, use the appropriate update action`;
+- When Josh asks about a client, proactively surface: session insights, open commitments, relationship health, language leaks, patterns, and recommended focus areas
+- When discussing sessions, cite specific quotes, themes, and breakthroughs from the transcript data
+- When Josh asks you to change/edit something, use the appropriate update action
+- Keep responses focused but thorough — give Josh the full picture with specific details from the data`;
 
     // Build messages for Claude
     const claudeMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
