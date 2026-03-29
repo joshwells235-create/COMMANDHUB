@@ -1,15 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Building2, AlertTriangle, Calendar } from 'lucide-react';
+import { Building2, AlertTriangle, Calendar, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Organization, Commitment } from '@/types/database';
+import { formatDistanceToNow } from 'date-fns';
 
 interface OrgPulse {
   org: Organization;
   openCommitments: number;
   overdueCount: number;
   nextEvent: string | null;
+  sessionCount: number;
+  lastContactDate: string | null;
 }
 
 export function ClientPulse() {
@@ -19,13 +22,17 @@ export function ClientPulse() {
   useEffect(() => {
     async function fetchPulse() {
       try {
-        const [orgsRes, commitmentsRes] = await Promise.all([
+        const [orgsRes, commitmentsRes, transcriptsRes] = await Promise.all([
           fetch('/api/organizations'),
           fetch('/api/commitments?status=pending,in_progress,waiting,snoozed&limit=200'),
+          fetch('/api/transcripts?is_processed=true'),
         ]);
 
         const orgs: Organization[] = await orgsRes.json();
         const commitments: Commitment[] = await commitmentsRes.json();
+        const transcriptsRaw = await (transcriptsRes.ok ? transcriptsRes.json() : Promise.resolve([]));
+        const transcripts: Array<{ org_id: string | null; transcript_date: string }> =
+          Array.isArray(transcriptsRaw) ? transcriptsRaw : transcriptsRaw.transcripts || [];
 
         const now = new Date();
         const activeOrgs = orgs.filter((o) => o.status === 'active' || o.status === 'partner');
@@ -36,11 +43,18 @@ export function ClientPulse() {
             (c) => c.due_date && new Date(c.due_date) < now && c.status !== 'waiting'
           );
 
+          const orgTranscripts = transcripts.filter((t) => t.org_id === org.id);
+          const sortedDates = orgTranscripts
+            .map((t) => t.transcript_date)
+            .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+
           return {
             org,
             openCommitments: orgCommitments.length,
             overdueCount: overdue.length,
             nextEvent: null, // Calendar events come from a different endpoint
+            sessionCount: orgTranscripts.length,
+            lastContactDate: sortedDates[0] || null,
           };
         });
 
@@ -107,11 +121,28 @@ export function ClientPulse() {
               <p className="text-sm font-medium text-foreground truncate">
                 {pulse.org.name}
               </p>
-              <div className="flex items-center gap-1.5 text-xs text-muted">
+              <div className="flex items-center gap-1.5 text-xs text-muted flex-wrap">
                 {pulse.openCommitments > 0 ? (
                   <span>{pulse.openCommitments} open</span>
                 ) : (
                   <span className="text-muted/50">no open items</span>
+                )}
+                {pulse.sessionCount > 0 && (
+                  <>
+                    <span>&middot;</span>
+                    <span className="flex items-center gap-0.5">
+                      <FileText className="w-3 h-3" />
+                      {pulse.sessionCount} session{pulse.sessionCount !== 1 ? 's' : ''}
+                    </span>
+                  </>
+                )}
+                {pulse.lastContactDate && (
+                  <>
+                    <span>&middot;</span>
+                    <span>
+                      last {formatDistanceToNow(new Date(pulse.lastContactDate), { addSuffix: true })}
+                    </span>
+                  </>
                 )}
                 {pulse.nextEvent && (
                   <>

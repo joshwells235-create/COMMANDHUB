@@ -927,6 +927,46 @@ export default function ClientDetailPage() {
                   </div>
                 )}
 
+                {/* Session Arc */}
+                {latestTranscript.session_arc && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <TrendingUp className="w-3.5 h-3.5" /> Session Arc
+                    </h4>
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {latestTranscript.session_arc}
+                    </p>
+                  </div>
+                )}
+
+                {/* Notable Quotes */}
+                {latestTranscript.notable_quotes &&
+                  latestTranscript.notable_quotes.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                        <MessageSquare className="w-3.5 h-3.5" /> Notable Quotes
+                      </h4>
+                      <div className="space-y-2">
+                        {latestTranscript.notable_quotes.map((q, i) => (
+                          <div
+                            key={i}
+                            className="bg-background rounded p-2.5 text-sm"
+                          >
+                            <p className="text-foreground italic">
+                              &ldquo;{q.quote}&rdquo;
+                            </p>
+                            <p className="text-xs text-muted mt-1">
+                              <span className="font-medium text-primary">
+                                {q.speaker}
+                              </span>
+                              {q.context && <> &mdash; {q.context}</>}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                 {/* Recommended Focus */}
                 {latestTranscript.client_insights
                   ?.recommended_focus_next_session && (
