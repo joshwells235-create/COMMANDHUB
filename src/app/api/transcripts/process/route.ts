@@ -113,6 +113,7 @@ When extracting commitments, pay close attention to WHO is taking the action:
 - If Josh ASKS the client to do something ("Can you send me...", "I need you to...") → owner="other", commitment_type="waiting_on"
 - If the client ASKS Josh to do something → owner="josh", commitment_type="ask_received"
 - Do NOT assign owner="josh" when someone else is the one who needs to act. This is the most common mistake.
+- Do NOT create commitments for attending meetings, showing up to calls, or joining sessions. The calendar handles that. Only extract commitments for actual ACTION ITEMS — things to prepare, send, review, create, or follow up on.
 
 Analyze and return JSON only (no markdown code blocks):
 {
@@ -183,6 +184,7 @@ When extracting commitments, pay close attention to WHO is taking the action:
 - If the other person says "I'll do X", "I will send that", "We'll take care of it" → owner="other", commitment_type="waiting_on", other_party=their name
 - If JOSH says "I'll handle that", "I will call them", "Let me look into it" → owner="josh", commitment_type="promise_made" or "follow_up"
 - Do NOT assign owner="josh" when someone else is the one who needs to act.
+- Do NOT create commitments for attending meetings, showing up to appointments, or joining calls. Only extract actual action items.
 
 Analyze and return JSON only (no markdown code blocks):
 {

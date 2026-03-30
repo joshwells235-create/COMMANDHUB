@@ -127,7 +127,9 @@ ${isSent ? `Since Josh SENT this email:
 3. IMPLICIT FOLLOW-UPS - proposals need follow-up, questions need responses, meetings need prep → owner="josh", commitment_type="follow_up"
 4. INFORMATION FOR JOSH - FYI items that don't need action → skip, do NOT create a commitment`}
 
-CRITICAL: When someone OTHER than Josh promises to do something, set owner="other" and commitment_type="waiting_on". Do NOT put these on Josh's plate.
+CRITICAL RULES:
+- When someone OTHER than Josh promises to do something, set owner="other" and commitment_type="waiting_on". Do NOT put these on Josh's plate.
+- Do NOT create commitments for attending meetings, joining calls, or showing up to events. The calendar handles scheduling. Only create commitments for actual action items — things to prepare, send, review, or follow up on.
 ${isSent ? `
 RESOLVED COMMITMENTS — compare this email against the PENDING COMMITMENTS list above. If Josh's sent email appears to fulfill or address any pending commitment, list the commitment IDs that should be marked complete or in-progress.` : ''}
 
