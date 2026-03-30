@@ -668,6 +668,15 @@ Return as plain text, formatted for quick reading. Use short paragraphs and bull
             updates.due_date = parseRelativeDate(updates.due_date) || updates.due_date;
           }
 
+          // Resolve org_name to org_id (commitments table uses org_id, not org_name)
+          if (updates.org_name && typeof updates.org_name === 'string') {
+            const match = allOrgs.find(
+              (o) => o.name.toLowerCase() === (updates.org_name as string).toLowerCase()
+            );
+            if (match) updates.org_id = match.id;
+            delete updates.org_name;
+          }
+
           const now = new Date().toISOString();
           const { data, error } = await supabase
             .from('commitments')
