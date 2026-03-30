@@ -7,6 +7,7 @@
     { "path": "/api/cron/escalation", "schedule": "0 12 * * *" },
     { "path": "/api/cron/learn-priorities", "schedule": "0 5 * * *" },
     { "path": "/api/cron/morning-briefing", "schedule": "0 11 * * 1-5" },
-    { "path": "/api/cron/weekly-briefing", "schedule": "0 11 * * 1" }
+    { "path": "/api/cron/weekly-briefing", "schedule": "0 11 * * 1" },
+    { "path": "/api/cron/refresh-intelligence", "schedule": "0 6 * * 0" }
   ]
 }

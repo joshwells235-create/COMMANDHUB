@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Clock, X, AlertTriangle, Pencil, Save, Loader2, CheckCircle2, Target, GripVertical } from 'lucide-react';
+import { Check, Clock, X, AlertTriangle, Pencil, Save, Loader2, CheckCircle2, Target, GripVertical, FileText, Mail, Calendar } from 'lucide-react';
 import type { Commitment, CommitmentType } from '@/types/database';
 import { getDueLabel, getCommitmentTypeLabel, getEscalationIndicator, cn } from '@/lib/utils';
 import { SnoozePicker } from '@/components/ui/snooze-picker';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, differenceInDays } from 'date-fns';
 import {
   DndContext,
   closestCenter,
@@ -67,6 +67,63 @@ function SortableWrapper({ id, children, disabled }: { id: string; children: Rea
       {children}
     </div>
   );
+}
+
+function SourceBadge({ sourceType }: { sourceType: string | null }) {
+  if (!sourceType) return null;
+
+  const config: Record<string, { icon: typeof FileText; label: string; className: string }> = {
+    transcript: { icon: FileText, label: 'Transcript', className: 'text-indigo-400 bg-indigo-400/10' },
+    email: { icon: Mail, label: 'Email', className: 'text-blue-400 bg-blue-400/10' },
+    calendar: { icon: Calendar, label: 'Calendar', className: 'text-amber-400 bg-amber-400/10' },
+  };
+
+  const badge = config[sourceType];
+  if (!badge) return null;
+
+  const Icon = badge.icon;
+  return (
+    <span className={cn('inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded', badge.className)}>
+      <Icon className="w-2.5 h-2.5" />
+      {badge.label}
+    </span>
+  );
+}
+
+function buildPriorityTitle(c: Commitment): string {
+  const factors: string[] = [];
+
+  if (c.due_date) {
+    const now = new Date();
+    const due = new Date(c.due_date);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+    const diff = differenceInDays(dueDay, today);
+
+    if (diff < 0) {
+      factors.push(`Overdue by ${Math.abs(diff)} day${Math.abs(diff) !== 1 ? 's' : ''} (+${Math.min(Math.abs(diff) * 5, 30)} points)`);
+    } else if (diff === 0) {
+      factors.push('Due today (+15 points)');
+    } else if (diff === 1) {
+      factors.push('Due tomorrow (+10 points)');
+    }
+  }
+
+  if (c.commitment_type === 'promise_made') {
+    factors.push('Promise made (+10)');
+  }
+
+  if (c.source_type === 'email') {
+    factors.push('From email');
+  } else if (c.source_type === 'calendar') {
+    factors.push('From calendar prep');
+  }
+
+  if (factors.length === 0) {
+    return `Priority: ${c.priority_score}`;
+  }
+
+  return `Priority: ${c.priority_score}\n${factors.join('\n')}`;
 }
 
 export function CommitmentList({
@@ -214,9 +271,18 @@ export function CommitmentList({
                     </div>
                   </div>
 
-                  <span className={cn('text-xs mt-0.5 flex-shrink-0', isOverdue ? 'text-danger' : 'text-muted')}>
-                    {getCommitmentTypeLabel(c.commitment_type)}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+                    <span className={cn('text-xs', isOverdue ? 'text-danger' : 'text-muted')}>
+                      {getCommitmentTypeLabel(c.commitment_type)}
+                    </span>
+                    <SourceBadge sourceType={c.source_type} />
+                    <span
+                      className="text-[10px] text-muted/60 tabular-nums"
+                      title={buildPriorityTitle(c)}
+                    >
+                      {c.priority_score}
+                    </span>
+                  </div>
                 </button>
 
                 {isExpanded && showActions && !isEditing && (

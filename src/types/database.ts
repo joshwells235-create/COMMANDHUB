@@ -119,6 +119,7 @@ export interface CalendarEvent {
   ai_analysis: {
     org_match?: string;
     event_type?: string;
+    importance?: string;
     prep_notes?: string;
     implied_commitments?: Array<{
       title: string;

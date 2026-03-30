@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -42,6 +42,9 @@ import {
 import { SnoozePicker } from '@/components/ui/snooze-picker';
 import { DraftComposer } from '@/components/drafts/draft-composer';
 import { InteractionTimeline } from '@/components/clients/interaction-timeline';
+import { UnifiedTimeline } from '@/components/clients/unified-timeline';
+import type { TimelineItem } from '@/components/clients/unified-timeline';
+import type { CalendarEvent, ReviewEmail } from '@/types/database';
 import { format, formatDistanceToNow } from 'date-fns';
 
 export default function ClientDetailPage() {
@@ -57,6 +60,93 @@ export default function ClientDetailPage() {
     error,
     refresh,
   } = useClientDetail(orgId);
+
+  // Fetch emails and calendar events for the unified timeline
+  const [orgEmails, setOrgEmails] = useState<ReviewEmail[]>([]);
+  const [orgCalendarEvents, setOrgCalendarEvents] = useState<CalendarEvent[]>([]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    // Fetch emails for this org
+    fetch(`/api/emails/needs-reply?org_id=${orgId}&all=true`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setOrgEmails(Array.isArray(data) ? data : data.emails || []))
+      .catch(() => setOrgEmails([]));
+    // Fetch calendar events for this org
+    fetch(`/api/calendar?org_id=${orgId}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setOrgCalendarEvents(Array.isArray(data) ? data : data.events || []))
+      .catch(() => setOrgCalendarEvents([]));
+  }, [orgId]);
+
+  // Build unified timeline items
+  const unifiedTimelineItems = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = [];
+
+    // Transcripts
+    transcripts.forEach((t) => {
+      items.push({
+        id: t.id,
+        type: 'transcript',
+        date: t.transcript_date,
+        title: t.title || `${t.transcript_type || 'Session'} - ${format(new Date(t.transcript_date), 'MMM d, yyyy')}`,
+        subtitle: t.summary ? t.summary.slice(0, 120) + (t.summary.length > 120 ? '...' : '') : undefined,
+      });
+    });
+
+    // Active commitments (created)
+    commitments.forEach((c) => {
+      items.push({
+        id: c.id,
+        type: 'commitment_created',
+        date: c.created_at,
+        title: c.title,
+        subtitle: c.commitment_type ? c.commitment_type.replace(/_/g, ' ') : undefined,
+        detail: c.description || undefined,
+      });
+    });
+
+    // Completed commitments
+    completedCommitments.forEach((c) => {
+      items.push({
+        id: c.id,
+        type: 'commitment_completed',
+        date: c.completed_at || c.updated_at,
+        title: c.title,
+        subtitle: 'Completed',
+      });
+    });
+
+    // Emails
+    orgEmails.forEach((e) => {
+      const isSent = e.sender_email?.toLowerCase().includes('josh') || false;
+      items.push({
+        id: e.id,
+        type: isSent ? 'email_sent' : 'email_received',
+        date: e.received_at || e.created_at,
+        title: e.subject || '(No subject)',
+        subtitle: isSent ? `To: ${e.sender || 'Unknown'}` : `From: ${e.sender || 'Unknown'}`,
+        detail: e.body_preview || undefined,
+        sentiment: e.ai_extraction?.needs_reply
+          ? (e.ai_extraction.reply_urgency === 'today' ? 'concerned' : undefined)
+          : undefined,
+      });
+    });
+
+    // Calendar events
+    orgCalendarEvents.forEach((ev) => {
+      items.push({
+        id: ev.id,
+        type: 'calendar',
+        date: ev.start_time,
+        title: ev.subject || 'Meeting',
+        subtitle: ev.location || undefined,
+        detail: ev.body_preview || undefined,
+      });
+    });
+
+    return items;
+  }, [transcripts, commitments, completedCommitments, orgEmails, orgCalendarEvents]);
 
   const [showDraft, setShowDraft] = useState(false);
   const [expandedCommitment, setExpandedCommitment] = useState<string | null>(null);
@@ -121,6 +211,7 @@ export default function ClientDetailPage() {
   const [trajectoryLoading, setTrajectoryLoading] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     commitments: true,
+    unifiedTimeline: true,
     timeline: true,
     brief: true,
     trajectory: false,
@@ -1204,6 +1295,27 @@ export default function ClientDetailPage() {
                 );
               })()}
             </div>
+          )}
+        </section>
+
+        {/* Unified Timeline */}
+        <section>
+          <button
+            onClick={() => toggleSection('unifiedTimeline')}
+            className="w-full flex items-center justify-between mb-3"
+          >
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+              Activity Feed ({unifiedTimelineItems.length})
+            </h2>
+            {expandedSections.unifiedTimeline ? (
+              <ChevronDown className="w-4 h-4 text-muted" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-muted" />
+            )}
+          </button>
+
+          {expandedSections.unifiedTimeline && (
+            <UnifiedTimeline items={unifiedTimelineItems} loading={loading} />
           )}
         </section>
 

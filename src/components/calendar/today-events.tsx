@@ -6,6 +6,16 @@ import type { CalendarEvent } from '@/types/database';
 import { formatEventTime } from '@/lib/utils';
 import { format } from 'date-fns';
 
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  coaching_session: 'Coaching',
+  workshop: 'Workshop',
+  pi_session: 'PI Session',
+  client_meeting: 'Meeting',
+  internal_leadshift: 'Internal',
+  vistage: 'Vistage',
+  personal: 'Personal',
+};
+
 interface TodayEventsProps {
   events: CalendarEvent[];
   connected: boolean;
@@ -68,8 +78,12 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
         <div className="bg-card rounded-lg divide-y divide-border overflow-hidden">
           {events.map((event) => {
             const prepNotes = event.ai_analysis?.prep_notes;
+            const eventType = event.ai_analysis?.event_type as string | undefined;
+            const importance = event.ai_analysis?.importance as string | undefined;
+            const eventTypeLabel = eventType ? EVENT_TYPE_LABELS[eventType] : undefined;
+            const isHighImportance = importance === 'high';
             return (
-              <div key={event.id} className="px-4 py-3">
+              <div key={event.id} className={`px-4 py-3${isHighImportance ? ' ring-1 ring-primary/30 bg-primary/5 rounded-lg' : ''}`}>
                 <div className="flex items-start gap-3">
                   <span className="text-xs text-muted font-mono mt-0.5 flex-shrink-0 w-16">
                     {formatEventTime(event.start_time)}
@@ -77,6 +91,11 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium leading-tight">{event.subject}</p>
+                      {eventTypeLabel && (
+                        <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/20 text-primary">
+                          {eventTypeLabel}
+                        </span>
+                      )}
                       {event.org_id && (
                         <Link
                           href={`/prep/${event.org_id}`}
