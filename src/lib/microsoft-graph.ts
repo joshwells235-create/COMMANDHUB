@@ -201,46 +201,83 @@ export async function fetchEmails(sinceDate: string, top: number = 50) {
   const accessToken = await getValidAccessToken();
 
   const filter = `receivedDateTime ge ${sinceDate}`;
-  const url = `${GRAPH_BASE}/me/messages?$top=${top}&$orderby=receivedDateTime desc&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,body,bodyPreview,receivedDateTime,isRead,conversationId`;
+  let allEmails: Record<string, unknown>[] = [];
+  let nextUrl: string | null = `${GRAPH_BASE}/me/messages?$top=${Math.min(top, 100)}&$orderby=receivedDateTime desc&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,body,bodyPreview,receivedDateTime,isRead,conversationId`;
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      Prefer: 'outlook.body-content-type="text"',
-    },
-  });
+  while (nextUrl && allEmails.length < top) {
+    const fetchUrl = nextUrl;
+    const response: Response = await fetch(fetchUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'outlook.body-content-type="text"',
+      },
+    });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(`Failed to fetch emails: ${errorData.error?.message || response.statusText}`);
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Failed to fetch emails: ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json() as { value?: Record<string, unknown>[]; '@odata.nextLink'?: string };
+    allEmails = allEmails.concat(data.value || []);
+    nextUrl = allEmails.length < top ? (data['@odata.nextLink'] || null) : null;
   }
 
-  const data = await response.json();
-  return data.value;
+  return allEmails.slice(0, top);
 }
 
 export async function fetchSentEmails(sinceDate: string, top: number = 50) {
   const accessToken = await getValidAccessToken();
 
   const filter = `sentDateTime ge ${sinceDate}`;
-  const url = `${GRAPH_BASE}/me/mailFolders/sentitems/messages?$top=${top}&$orderby=sentDateTime desc&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,body,bodyPreview,sentDateTime,receivedDateTime,conversationId`;
+  let allEmails: Record<string, unknown>[] = [];
+  let nextUrl: string | null = `${GRAPH_BASE}/me/mailFolders/sentitems/messages?$top=${Math.min(top, 100)}&$orderby=sentDateTime desc&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,body,bodyPreview,sentDateTime,receivedDateTime,conversationId`;
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      Prefer: 'outlook.body-content-type="text"',
-    },
-  });
+  while (nextUrl && allEmails.length < top) {
+    const fetchUrl = nextUrl;
+    const response: Response = await fetch(fetchUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'outlook.body-content-type="text"',
+      },
+    });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(`Failed to fetch sent emails: ${errorData.error?.message || response.statusText}`);
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Failed to fetch sent emails: ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json() as { value?: Record<string, unknown>[]; '@odata.nextLink'?: string };
+    allEmails = allEmails.concat(data.value || []);
+    nextUrl = allEmails.length < top ? (data['@odata.nextLink'] || null) : null;
   }
 
-  const data = await response.json();
-  return data.value;
+  return allEmails.slice(0, top);
+}
+
+/**
+ * Pre-filter obvious junk/noise emails before AI processing.
+ * Returns true if the email should be auto-skipped.
+ */
+function isObviousJunk(email: Record<string, unknown>): boolean {
+  const subject = ((email.subject as string) || '').toLowerCase();
+  const senderEmail = ((email.from as { emailAddress?: { address?: string } })?.emailAddress?.address || '').toLowerCase();
+  const senderName = ((email.from as { emailAddress?: { name?: string } })?.emailAddress?.name || '').toLowerCase();
+
+  // Automated/no-reply senders
+  const noReplySenders = ['noreply', 'no-reply', 'donotreply', 'do-not-reply', 'mailer-daemon', 'postmaster', 'notifications@', 'notify@', 'alerts@', 'updates@', 'news@', 'newsletter@', 'marketing@', 'info@', 'support@'];
+  if (noReplySenders.some((s) => senderEmail.includes(s))) return true;
+
+  // Known junk subject patterns
+  const junkSubjects = ['unsubscribe', 'your receipt', 'order confirmation', 'shipping confirmation', 'delivery notification', 'password reset', 'verify your email', 'activate your account', 'your subscription', 'weekly digest', 'daily digest', 'newsletter', 'webinar', 'invitation:'];
+  if (junkSubjects.some((s) => subject.includes(s))) return true;
+
+  // Automated calendar responses
+  if (subject.startsWith('accepted:') || subject.startsWith('declined:') || subject.startsWith('tentatively accepted:')) return true;
+
+  return false;
 }
 
 export async function syncEmails() {
@@ -258,14 +295,16 @@ export async function syncEmails() {
     || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   // Fetch inbox and sent in parallel
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [inboxEmails, sentEmails] = await Promise.all([
-    fetchEmails(sinceDate),
-    fetchSentEmails(sinceDate),
+    fetchEmails(sinceDate) as Promise<any[]>,
+    fetchSentEmails(sinceDate) as Promise<any[]>,
   ]);
 
   let totalSynced = 0;
 
   // Sync inbox emails
+  let junkSkipped = 0;
   for (const email of inboxEmails) {
     const sender = email.from?.emailAddress;
     const recipients = [
@@ -280,6 +319,10 @@ export async function syncEmails() {
         type: 'cc',
       })),
     ];
+
+    // Pre-filter obvious junk — mark as processed+dismissed immediately to skip AI
+    const junk = isObviousJunk(email);
+    if (junk) junkSkipped++;
 
     await supabase
       .from('emails')
@@ -296,8 +339,9 @@ export async function syncEmails() {
           conversation_id: email.conversationId ?? null,
           is_read: email.isRead ?? false,
           folder: 'inbox',
-          is_processed: false,
-          review_status: 'pending',
+          is_processed: junk,
+          review_status: junk ? 'dismissed' : 'pending',
+          ...(junk ? { ai_extraction: { is_noise: true, email_category: 'auto_filtered', email_summary: 'Auto-filtered as junk/automated' } } : {}),
         },
         { onConflict: 'ms_message_id', ignoreDuplicates: false }
       );
