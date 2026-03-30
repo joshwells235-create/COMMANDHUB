@@ -79,6 +79,8 @@ Determine:
 CRITICAL: Do NOT create commitments for simply attending or showing up to the meeting. The calendar event itself tracks attendance. Only create commitments for actual preparation work, deliverables, or follow-up actions. Examples:
 - GOOD: "Review Q1 results before meeting", "Prepare coaching session outline", "Send follow-up notes after session"
 - BAD: "Attend meeting with X", "Join call with Y", "Be at workshop", "Show up to session"
+- BAD: "Maintain sleep schedule", "Prepare sleep environment", "Prepare for deep work", "Confirm dinner"
+- SKIP ENTIRELY for recurring personal blocks (Sleep, Deep Work, Travel, workouts, meals). These are calendar context, not commitments.
 
 For prep_notes, give Josh specific, helpful preparation guidance — what to review, what questions to ask, what to bring up, what context to remember. This is his cheat sheet going into the meeting.
 
