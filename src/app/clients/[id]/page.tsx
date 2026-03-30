@@ -16,6 +16,7 @@ import {
   Search,
   User,
   FileText,
+  Upload,
   Calendar,
   MessageSquare,
   Brain,
@@ -259,6 +260,7 @@ export default function ClientDetailPage() {
     brief: true,
     trajectory: false,
     search: false,
+    assessments: true,
     contacts: true,
   });
 
@@ -292,6 +294,125 @@ export default function ClientDetailPage() {
   const [contactSaving, setContactSaving] = useState(false);
   const [showAddContact, setShowAddContact] = useState(false);
   const [newContact, setNewContact] = useState({ name: '', role: '', email: '', relationship_type: '', title: '', notes: '' });
+
+  // Assessment state
+  interface Assessment {
+    id: string;
+    org_id: string | null;
+    contact_id: string | null;
+    title: string;
+    assessment_type: string;
+    assessment_date: string | null;
+    file_name: string | null;
+    file_url: string | null;
+    raw_text: string | null;
+    summary: string | null;
+    key_findings: Record<string, unknown> | null;
+    ai_analysis: string | null;
+    notes: string | null;
+    contacts: { id: string; name: string } | null;
+    created_at: string;
+  }
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [showUploadAssessment, setShowUploadAssessment] = useState(false);
+  const [uploadingAssessment, setUploadingAssessment] = useState(false);
+  const [analyzingAssessmentId, setAnalyzingAssessmentId] = useState<string | null>(null);
+  const [expandedAssessmentId, setExpandedAssessmentId] = useState<string | null>(null);
+  const [assessmentForm, setAssessmentForm] = useState({
+    contact_id: '',
+    assessment_type: 'predictive_index',
+    title: '',
+    assessment_date: new Date().toISOString().split('T')[0],
+    notes: '',
+  });
+  const [assessmentFile, setAssessmentFile] = useState<File | null>(null);
+
+  // Fetch assessments for this org
+  useEffect(() => {
+    if (!orgId) return;
+    fetch(`/api/assessments?org_id=${orgId}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setAssessments(Array.isArray(data) ? data : []))
+      .catch(() => setAssessments([]));
+  }, [orgId]);
+
+  async function uploadAssessment() {
+    if (!assessmentFile) {
+      toast.error('Please select a PDF file');
+      return;
+    }
+    setUploadingAssessment(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', assessmentFile);
+      formData.append('org_id', orgId);
+      if (assessmentForm.contact_id) formData.append('contact_id', assessmentForm.contact_id);
+      formData.append('assessment_type', assessmentForm.assessment_type);
+      if (assessmentForm.title) formData.append('title', assessmentForm.title);
+      formData.append('assessment_date', assessmentForm.assessment_date);
+      if (assessmentForm.notes) formData.append('notes', assessmentForm.notes);
+
+      const res = await fetch('/api/assessments/upload', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Upload failed');
+      }
+      const result = await res.json();
+      toast.success('Assessment uploaded');
+      setAssessments((prev) => [result.assessment, ...prev]);
+      setShowUploadAssessment(false);
+      setAssessmentFile(null);
+      setAssessmentForm({ contact_id: '', assessment_type: 'predictive_index', title: '', assessment_date: new Date().toISOString().split('T')[0], notes: '' });
+
+      // Auto-trigger AI analysis if text was extracted
+      if (result.has_text) {
+        analyzeAssessment(result.assessment.id);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadingAssessment(false);
+    }
+  }
+
+  async function analyzeAssessment(id: string) {
+    setAnalyzingAssessmentId(id);
+    try {
+      const res = await fetch('/api/assessments/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessment_id: id }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Analysis failed');
+      }
+      const result = await res.json();
+      setAssessments((prev) =>
+        prev.map((a) =>
+          a.id === id
+            ? { ...a, summary: result.summary, key_findings: result.key_findings, ai_analysis: result.ai_analysis }
+            : a
+        )
+      );
+      toast.success('Assessment analyzed');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Analysis failed');
+    } finally {
+      setAnalyzingAssessmentId(null);
+    }
+  }
+
+  async function deleteAssessment(id: string) {
+    try {
+      const res = await fetch(`/api/assessments/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      setAssessments((prev) => prev.filter((a) => a.id !== id));
+      toast.success('Assessment deleted');
+    } catch {
+      toast.error('Failed to delete assessment');
+    }
+  }
 
   function startEditingContact(c: { id: string; name: string; role: string | null; email: string | null; relationship_type: string | null; notes: string | null }) {
     setEditingContactId(c.id);
@@ -1812,6 +1933,355 @@ export default function ClientDetailPage() {
                 </div>
               )}
             </div>
+          )}
+        </section>
+
+        {/* Assessments */}
+        <section>
+          <button
+            onClick={() => toggleSection('assessments')}
+            className="w-full flex items-center justify-between mb-3"
+          >
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+              Assessments ({assessments.length})
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowUploadAssessment(!showUploadAssessment); }}
+                className="text-primary hover:text-primary/80 transition-colors"
+                title="Upload assessment"
+              >
+                <Upload className="w-4 h-4" />
+              </button>
+              {expandedSections.assessments ? (
+                <ChevronDown className="w-4 h-4 text-muted" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-muted" />
+              )}
+            </div>
+          </button>
+
+          {expandedSections.assessments && (
+            <>
+              {/* Upload Form */}
+              {showUploadAssessment && (
+                <div className="bg-card rounded-lg p-4 border border-primary/30 mb-3 space-y-3">
+                  <h4 className="text-xs font-semibold text-primary uppercase tracking-wider flex items-center gap-1">
+                    <Upload className="w-3.5 h-3.5" /> Upload Assessment PDF
+                  </h4>
+
+                  {/* File Drop Zone */}
+                  <label
+                    className={cn(
+                      'flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors',
+                      assessmentFile
+                        ? 'border-primary/50 bg-primary/5'
+                        : 'border-border hover:border-primary/30'
+                    )}
+                  >
+                    <input
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      className="hidden"
+                      onChange={(e) => setAssessmentFile(e.target.files?.[0] || null)}
+                    />
+                    {assessmentFile ? (
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-primary" />
+                        <span className="text-sm text-foreground">{assessmentFile.name}</span>
+                        <button
+                          onClick={(e) => { e.preventDefault(); setAssessmentFile(null); }}
+                          className="ml-2 text-muted hover:text-danger"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="w-6 h-6 text-muted" />
+                        <span className="text-sm text-muted">Click or drag to upload PDF</span>
+                      </>
+                    )}
+                  </label>
+
+                  {/* Form Fields */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Type *</label>
+                      <select
+                        value={assessmentForm.assessment_type}
+                        onChange={(e) => setAssessmentForm({ ...assessmentForm, assessment_type: e.target.value })}
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                      >
+                        <option value="predictive_index">Predictive Index (PI)</option>
+                        <option value="eq_i_2">EQ-i 2.0</option>
+                        <option value="five_dysfunctions">Five Dysfunctions</option>
+                        <option value="disc">DiSC</option>
+                        <option value="strengthsfinder">CliftonStrengths</option>
+                        <option value="mbti">MBTI</option>
+                        <option value="custom">Custom / Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Person</label>
+                      <select
+                        value={assessmentForm.contact_id}
+                        onChange={(e) => setAssessmentForm({ ...assessmentForm, contact_id: e.target.value })}
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                      >
+                        <option value="">-- Select person --</option>
+                        {contacts.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Title</label>
+                      <input
+                        type="text"
+                        value={assessmentForm.title}
+                        onChange={(e) => setAssessmentForm({ ...assessmentForm, title: e.target.value })}
+                        placeholder="Auto-generated if blank"
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Date</label>
+                      <input
+                        type="date"
+                        value={assessmentForm.assessment_date}
+                        onChange={(e) => setAssessmentForm({ ...assessmentForm, assessment_date: e.target.value })}
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted uppercase tracking-wide">Notes</label>
+                    <input
+                      type="text"
+                      value={assessmentForm.notes}
+                      onChange={(e) => setAssessmentForm({ ...assessmentForm, notes: e.target.value })}
+                      placeholder="Optional notes about this assessment..."
+                      className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={uploadAssessment}
+                      disabled={uploadingAssessment || !assessmentFile}
+                      className="flex items-center gap-1 px-3 py-1.5 btn-gradient text-white rounded-md text-xs font-medium disabled:opacity-50"
+                    >
+                      {uploadingAssessment ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                      Upload & Analyze
+                    </button>
+                    <button
+                      onClick={() => { setShowUploadAssessment(false); setAssessmentFile(null); }}
+                      className="px-3 py-1.5 bg-card-hover text-muted rounded-md text-xs font-medium hover:text-foreground"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Assessment List */}
+              {assessments.length === 0 && !showUploadAssessment ? (
+                <p className="text-sm text-muted/60 py-3">
+                  No assessments uploaded yet. Click the upload icon to add a PDF.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {assessments.map((assessment) => {
+                    const isExpanded = expandedAssessmentId === assessment.id;
+                    const isAnalyzing = analyzingAssessmentId === assessment.id;
+                    const typeLabels: Record<string, string> = {
+                      predictive_index: 'PI',
+                      eq_i_2: 'EQ-i 2.0',
+                      five_dysfunctions: '5 Dysfunctions',
+                      disc: 'DiSC',
+                      strengthsfinder: 'CliftonStrengths',
+                      mbti: 'MBTI',
+                      custom: 'Custom',
+                      general: 'General',
+                    };
+                    const typeLabel = typeLabels[assessment.assessment_type] || assessment.assessment_type;
+                    const findings = assessment.key_findings as {
+                      highlights?: string[];
+                      areas_of_strength?: string[];
+                      development_areas?: string[];
+                      under_pressure?: string;
+                    } | null;
+
+                    return (
+                      <div key={assessment.id} className="bg-card rounded-lg border border-transparent hover:border-border transition-all">
+                        {/* Header row */}
+                        <button
+                          onClick={() => setExpandedAssessmentId(isExpanded ? null : assessment.id)}
+                          className="w-full px-4 py-3 flex items-center gap-3 text-left"
+                        >
+                          <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">
+                              {assessment.title}
+                            </p>
+                            <div className="flex items-center gap-1.5 text-xs text-muted">
+                              <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-[10px] font-medium">
+                                {typeLabel}
+                              </span>
+                              {assessment.contacts?.name && (
+                                <>
+                                  <span>&middot;</span>
+                                  <span>{assessment.contacts.name}</span>
+                                </>
+                              )}
+                              {assessment.assessment_date && (
+                                <>
+                                  <span>&middot;</span>
+                                  <span>{format(new Date(assessment.assessment_date), 'MMM d, yyyy')}</span>
+                                </>
+                              )}
+                              {assessment.summary && (
+                                <span title="AI analyzed"><Sparkles className="w-3 h-3 text-amber-400 ml-1" /></span>
+                              )}
+                            </div>
+                          </div>
+                          {isExpanded ? (
+                            <ChevronDown className="w-4 h-4 text-muted flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-muted flex-shrink-0" />
+                          )}
+                        </button>
+
+                        {/* Expanded detail */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 space-y-3 border-t border-border/50">
+                            {/* Action buttons */}
+                            <div className="flex items-center gap-2 pt-3">
+                              {assessment.file_url && (
+                                <a
+                                  href={assessment.file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary rounded-md text-xs font-medium hover:bg-primary/20 transition-colors"
+                                >
+                                  <FileText className="w-3 h-3" /> View PDF
+                                </a>
+                              )}
+                              {assessment.raw_text && !assessment.summary && (
+                                <button
+                                  onClick={() => analyzeAssessment(assessment.id)}
+                                  disabled={isAnalyzing}
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/10 text-amber-400 rounded-md text-xs font-medium hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+                                >
+                                  {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                  Analyze with AI
+                                </button>
+                              )}
+                              {assessment.summary && (
+                                <button
+                                  onClick={() => analyzeAssessment(assessment.id)}
+                                  disabled={isAnalyzing}
+                                  className="flex items-center gap-1 px-2.5 py-1 bg-card-hover text-muted rounded-md text-xs font-medium hover:text-foreground transition-colors disabled:opacity-50"
+                                >
+                                  {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                  Re-analyze
+                                </button>
+                              )}
+                              <button
+                                onClick={() => { if (confirm('Delete this assessment?')) deleteAssessment(assessment.id); }}
+                                className="flex items-center gap-1 px-2.5 py-1 text-danger/70 hover:text-danger rounded-md text-xs font-medium transition-colors ml-auto"
+                              >
+                                <X className="w-3 h-3" /> Delete
+                              </button>
+                            </div>
+
+                            {/* AI Summary */}
+                            {assessment.summary && (
+                              <div className="space-y-2">
+                                <h5 className="text-xs font-semibold text-primary uppercase tracking-wider">Summary</h5>
+                                <p className="text-sm text-foreground/90 leading-relaxed">{assessment.summary}</p>
+                              </div>
+                            )}
+
+                            {/* Key Findings */}
+                            {findings && (
+                              <div className="space-y-2">
+                                {findings.highlights && findings.highlights.length > 0 && (
+                                  <div>
+                                    <h5 className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-1">Key Highlights</h5>
+                                    <ul className="space-y-0.5">
+                                      {findings.highlights.map((h: string, i: number) => (
+                                        <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
+                                          <span className="text-amber-400 mt-0.5">&#8226;</span> {h}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {findings.areas_of_strength && findings.areas_of_strength.length > 0 && (
+                                  <div>
+                                    <h5 className="text-xs font-semibold text-success uppercase tracking-wider mb-1">Strengths</h5>
+                                    <ul className="space-y-0.5">
+                                      {findings.areas_of_strength.map((s: string, i: number) => (
+                                        <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
+                                          <span className="text-success mt-0.5">&#8226;</span> {s}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {findings.development_areas && findings.development_areas.length > 0 && (
+                                  <div>
+                                    <h5 className="text-xs font-semibold text-warning uppercase tracking-wider mb-1">Development Areas</h5>
+                                    <ul className="space-y-0.5">
+                                      {findings.development_areas.map((d: string, i: number) => (
+                                        <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
+                                          <span className="text-warning mt-0.5">&#8226;</span> {d}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {findings.under_pressure && (
+                                  <div>
+                                    <h5 className="text-xs font-semibold text-danger uppercase tracking-wider mb-1">Under Pressure</h5>
+                                    <p className="text-xs text-foreground/80">{findings.under_pressure}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Full AI Analysis */}
+                            {assessment.ai_analysis && (
+                              <div className="space-y-2">
+                                <h5 className="text-xs font-semibold text-primary uppercase tracking-wider">Coaching Analysis</h5>
+                                <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap bg-background/50 rounded-lg p-3 border border-border/50">
+                                  {assessment.ai_analysis}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Notes */}
+                            {assessment.notes && (
+                              <div className="text-xs text-muted italic">{assessment.notes}</div>
+                            )}
+
+                            {/* Analyzing indicator */}
+                            {isAnalyzing && (
+                              <div className="flex items-center gap-2 text-xs text-amber-400">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Analyzing assessment with AI...
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </section>
 
