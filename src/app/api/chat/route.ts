@@ -1227,11 +1227,20 @@ ${recentActivity.map((a) => {
           .order('transcript_date', { ascending: false })
           .limit(10);
 
-        // Fetch contacts
+        // Fetch contacts with full profile data
         const { data: orgContacts } = await supabase
           .from('contacts')
-          .select('name, role, email, relationship_type, notes')
+          .select('id, name, role, title, email, phone, relationship_type, category, notes, personality_notes, coaching_focus, communication_style')
           .eq('org_id', org.id);
+
+        // Fetch assessments for all contacts in this org
+        const contactIds = (orgContacts || []).map((c) => c.id);
+        const { data: orgAssessments } = contactIds.length > 0
+          ? await supabase
+              .from('assessments')
+              .select('contact_id, assessment_type, title, summary, key_findings, ai_analysis, assessment_date')
+              .in('contact_id', contactIds)
+          : { data: [] };
 
         // Fetch calendar events for this client
         const { data: orgEvents } = await supabase
@@ -1259,10 +1268,44 @@ ${orgDetail?.notes ? `Notes: ${orgDetail.notes}` : ''}
 Health: ${openCmts.length} open commitments (${overdueCmts.length} overdue) | ${completedCmts.length} completed | Follow-through: ${followThroughRate}%
 ${daysSinceContact !== null ? `Days since last session: ${daysSinceContact}` : 'No sessions recorded'}`;
 
-        // Contacts
+        // Contacts with full profiles and assessments
         if (orgContacts && orgContacts.length > 0) {
-          clientBlock += `\n\nContacts:
-${orgContacts.map((c) => `- ${c.name}${c.role ? ' (' + c.role + ')' : ''}${c.email ? ' <' + c.email + '>' : ''}${c.relationship_type ? ' [' + c.relationship_type + ']' : ''}${c.notes ? ' — ' + c.notes : ''}`).join('\n')}`;
+          const assessmentsByContact = new Map<string, typeof orgAssessments>();
+          for (const a of (orgAssessments || [])) {
+            const list = assessmentsByContact.get(a.contact_id) || [];
+            list.push(a);
+            assessmentsByContact.set(a.contact_id, list);
+          }
+
+          clientBlock += `\n\nPeople/Contacts:`;
+          for (const c of orgContacts) {
+            clientBlock += `\n- ${c.name}`;
+            if (c.title) clientBlock += `, ${c.title}`;
+            if (c.role) clientBlock += ` (${c.role})`;
+            if (c.relationship_type) clientBlock += ` [${c.relationship_type}]`;
+            if (c.email) clientBlock += ` <${c.email}>`;
+            if (c.phone) clientBlock += ` ph:${c.phone}`;
+            if (c.coaching_focus) clientBlock += `\n  Coaching focus: ${c.coaching_focus}`;
+            if (c.personality_notes) clientBlock += `\n  Personality: ${c.personality_notes}`;
+            if (c.communication_style) clientBlock += `\n  Communication style: ${c.communication_style}`;
+            if (c.notes) clientBlock += `\n  Notes: ${c.notes}`;
+
+            const assessments = assessmentsByContact.get(c.id);
+            if (assessments && assessments.length > 0) {
+              for (const a of assessments) {
+                clientBlock += `\n  Assessment — ${a.title} (${a.assessment_type}${a.assessment_date ? ', ' + a.assessment_date : ''})`;
+                if (a.summary) clientBlock += `: ${a.summary}`;
+                if (a.key_findings) {
+                  const kf = a.key_findings as Record<string, unknown>;
+                  if (Array.isArray(kf.areas_of_strength) && kf.areas_of_strength.length) clientBlock += `\n    Strengths: ${kf.areas_of_strength.join('; ')}`;
+                  if (Array.isArray(kf.development_areas) && kf.development_areas.length) clientBlock += `\n    Development areas: ${kf.development_areas.join('; ')}`;
+                  if (Array.isArray(kf.behavioral_drives) && kf.behavioral_drives.length) clientBlock += `\n    Behavioral drives: ${kf.behavioral_drives.join('; ')}`;
+                  if (kf.under_pressure) clientBlock += `\n    Under pressure: ${kf.under_pressure}`;
+                }
+                if (a.ai_analysis) clientBlock += `\n    Coaching analysis: ${a.ai_analysis}`;
+              }
+            }
+          }
         }
 
         // All open commitments
