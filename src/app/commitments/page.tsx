@@ -2,10 +2,13 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Zap, Filter } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { ArrowLeft, Zap, Filter, X } from 'lucide-react';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
 import { CommitmentList } from '@/components/commitments/commitment-list';
+import { WaitingOnList } from '@/components/commitments/waiting-on-list';
+import { isToday, isThisWeek } from 'date-fns';
 import type { CommitmentType, CommitmentStatus } from '@/types/database';
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
@@ -30,11 +33,29 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'note_to_self', label: 'Note to Self' },
 ];
 
+const VIEW_LABELS: Record<string, string> = {
+  overdue: 'Overdue',
+  today: 'Due Today',
+  week: 'This Week',
+  waiting: 'Waiting On',
+};
+
 export default function CommitmentsPage() {
-  const [statusFilter, setStatusFilter] = useState('pending,in_progress');
+  const searchParams = useSearchParams();
+  const viewParam = searchParams.get('view') || '';
+
+  // Set initial filters based on view param
+  const [statusFilter, setStatusFilter] = useState(() => {
+    if (viewParam === 'waiting') return 'waiting';
+    return 'pending,in_progress';
+  });
   const [typeFilter, setTypeFilter] = useState('');
   const [orgFilter, setOrgFilter] = useState('');
-  const [ownerFilter, setOwnerFilter] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState(() => {
+    if (viewParam === 'waiting') return 'other';
+    return '';
+  });
+  const [activeView, setActiveView] = useState(viewParam);
 
   const {
     commitments,
@@ -50,12 +71,53 @@ export default function CommitmentsPage() {
     limit: 200,
   });
 
+  const { commitments: waitingCommitments, completeCommitment: completeWaiting } = useCommitments({
+    status: 'waiting',
+    owner: 'other',
+    limit: 200,
+  });
+
   const { organizations } = useOrganizations();
 
   const filtered = useMemo(() => {
-    if (!typeFilter) return commitments;
-    return commitments.filter((c) => c.commitment_type === typeFilter);
-  }, [commitments, typeFilter]);
+    let result = commitments;
+
+    // Apply type filter
+    if (typeFilter) {
+      result = result.filter((c) => c.commitment_type === typeFilter);
+    }
+
+    // Apply date-based view filter
+    if (activeView === 'overdue') {
+      const now = new Date();
+      result = result.filter((c) => {
+        if (!c.due_date) return false;
+        const d = new Date(c.due_date);
+        return d < now && !isToday(d);
+      });
+    } else if (activeView === 'today') {
+      result = result.filter((c) => {
+        if (!c.due_date) return false;
+        return isToday(new Date(c.due_date));
+      });
+    } else if (activeView === 'week') {
+      const now = new Date();
+      result = result.filter((c) => {
+        if (!c.due_date) return false;
+        const d = new Date(c.due_date);
+        return isThisWeek(d) && !isToday(d) && d >= now;
+      });
+    }
+
+    return result;
+  }, [commitments, typeFilter, activeView]);
+
+  const clearView = () => {
+    setActiveView('');
+    setStatusFilter('pending,in_progress');
+    setOwnerFilter('');
+    window.history.replaceState(null, '', '/commitments');
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -67,7 +129,18 @@ export default function CommitmentsPage() {
             </Link>
             <div className="flex items-center gap-2">
               <Zap className="w-5 h-5 text-primary" />
-              <h1 className="text-lg font-bold tracking-tight">All Commitments</h1>
+              <h1 className="text-lg font-bold tracking-tight">
+                {activeView && VIEW_LABELS[activeView] ? VIEW_LABELS[activeView] : 'All Commitments'}
+              </h1>
+              {activeView && (
+                <button
+                  onClick={clearView}
+                  className="flex items-center gap-1 px-2 py-0.5 text-xs bg-primary/20 text-primary rounded-full hover:bg-primary/30 transition-colors"
+                >
+                  Filtered
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -122,11 +195,15 @@ export default function CommitmentsPage() {
             <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             Loading...
           </div>
+        ) : activeView === 'waiting' ? (
+          <div className="bg-card rounded-xl border border-border p-4">
+            <WaitingOnList commitments={waitingCommitments} onReceived={completeWaiting} />
+          </div>
         ) : (
           <div className="bg-card rounded-xl border border-border p-4">
             <CommitmentList
               commitments={filtered}
-              title={`${STATUS_OPTIONS.find((s) => s.value === statusFilter)?.label || 'Commitments'}`}
+              title={activeView && VIEW_LABELS[activeView] ? VIEW_LABELS[activeView] : (STATUS_OPTIONS.find((s) => s.value === statusFilter)?.label || 'Commitments')}
               emptyMessage="No commitments match these filters."
               onComplete={completeCommitment}
               onSnooze={snoozeCommitment}

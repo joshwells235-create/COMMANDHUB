@@ -184,26 +184,26 @@ export default function FocusView() {
 
           {/* 2. Stats Bar */}
           <div className="grid grid-cols-4 gap-2 stagger-children">
-            <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
+            <Link href="/commitments?view=overdue" className="glass rounded-xl p-3 text-center group hover:glow transition-all">
               <p className="text-2xl font-bold text-danger stat-number">{stats.overdue}</p>
               <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Overdue</p>
               {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.overdue} color="#ef4444" /></div>}
-            </button>
-            <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
+            </Link>
+            <Link href="/commitments?view=today" className="glass rounded-xl p-3 text-center group hover:glow transition-all">
               <p className="text-2xl font-bold text-warning stat-number">{stats.dueToday}</p>
               <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Due Today</p>
               {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.dueToday} color="#eab308" /></div>}
-            </button>
-            <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
+            </Link>
+            <Link href="/commitments?view=week" className="glass rounded-xl p-3 text-center group hover:glow transition-all">
               <p className="text-2xl font-bold text-primary stat-number">{stats.thisWeek}</p>
               <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">This Week</p>
               {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.completed} color="#06b6d4" /></div>}
-            </button>
-            <button className="glass rounded-xl p-3 text-center group hover:glow transition-all">
+            </Link>
+            <Link href="/commitments?view=waiting" className="glass rounded-xl p-3 text-center group hover:glow transition-all">
               <p className="text-2xl font-bold text-orange-400 stat-number">{stats.waitingOn}</p>
               <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Waiting On</p>
               {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.waiting} color="#fb923c" /></div>}
-            </button>
+            </Link>
           </div>
 
           {/* 3. Proactive Intel */}
@@ -319,26 +319,26 @@ export default function FocusView() {
 
             {/* Stats Bar */}
             <div className="grid grid-cols-4 gap-2 stagger-children">
-              <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
+              <Link href="/commitments?view=overdue" className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
                 <p className="text-2xl font-bold text-danger stat-number">{stats.overdue}</p>
                 <p className="text-xs text-muted">Overdue</p>
                 {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.overdue} color="#ef4444" /></div>}
-              </button>
-              <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
+              </Link>
+              <Link href="/commitments?view=today" className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
                 <p className="text-2xl font-bold text-warning stat-number">{stats.dueToday}</p>
                 <p className="text-xs text-muted">Due Today</p>
                 {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.dueToday} color="#eab308" /></div>}
-              </button>
-              <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
+              </Link>
+              <Link href="/commitments?view=week" className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
                 <p className="text-2xl font-bold text-primary stat-number">{stats.thisWeek}</p>
                 <p className="text-xs text-muted">This Week</p>
                 {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.completed} color="#06b6d4" /></div>}
-              </button>
-              <button className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
+              </Link>
+              <Link href="/commitments?view=waiting" className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
                 <p className="text-2xl font-bold text-orange-400 stat-number">{stats.waitingOn}</p>
                 <p className="text-xs text-muted">Waiting On</p>
                 {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.waiting} color="#fb923c" /></div>}
-              </button>
+              </Link>
             </div>
 
             {/* Follow-up Queue */}
