@@ -408,6 +408,66 @@ Analyze patterns across ALL clients and return JSON only (no markdown, no code b
     };
   }
 
+  // ── 3. Auto-run Longitudinal Analysis for eligible orgs ──────────────────
+
+  const longitudinalResults: Array<{ org_id: string; org_name: string; success: boolean; error?: string }> = [];
+
+  try {
+    // Find active orgs with 3+ processed transcripts that haven't been analyzed in 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const { data: orgsWithTranscripts } = await supabase
+      .from('organizations')
+      .select('id, name, intelligence')
+      .eq('status', 'active');
+
+    for (const org of orgsWithTranscripts || []) {
+      // Check if already analyzed recently
+      const intel = org.intelligence as { longitudinal_analyzed_at?: string } | null;
+      if (intel?.longitudinal_analyzed_at && new Date(intel.longitudinal_analyzed_at) > sevenDaysAgo) {
+        continue;
+      }
+
+      // Check transcript count
+      const { count } = await supabase
+        .from('transcripts')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', org.id)
+        .eq('is_processed', true);
+
+      if (!count || count < 3) continue;
+
+      // Run longitudinal analysis (limit to 2 orgs per run to avoid timeout)
+      if (longitudinalResults.length >= 2) break;
+
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : 'http://localhost:3000';
+        const resp = await fetch(`${baseUrl}/api/ai/longitudinal?org_id=${org.id}`, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (resp.ok) {
+          longitudinalResults.push({ org_id: org.id, org_name: org.name, success: true });
+        } else {
+          const err = await resp.json().catch(() => ({ error: 'Unknown' }));
+          longitudinalResults.push({ org_id: org.id, org_name: org.name, success: false, error: (err as { error?: string }).error });
+        }
+      } catch (e) {
+        longitudinalResults.push({
+          org_id: org.id,
+          org_name: org.name,
+          success: false,
+          error: e instanceof Error ? e.message : 'Unknown error',
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Longitudinal analysis refresh error:', error);
+  }
+
   // ── Return Results ───────────────────────────────────────────────────────
 
   const allSucceeded = results.theme_alerts.success && results.cross_client.success;
@@ -417,6 +477,7 @@ Analyze patterns across ALL clients and return JSON only (no markdown, no code b
       success: allSucceeded,
       refreshed_at: new Date().toISOString(),
       results,
+      longitudinal: longitudinalResults,
     },
     { status: allSucceeded ? 200 : 207 }
   );

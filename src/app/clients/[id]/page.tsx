@@ -254,6 +254,7 @@ export default function ClientDetailPage() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     commitments: true,
     unifiedTimeline: true,
+    emailIntel: true,
     timeline: true,
     brief: true,
     trajectory: false,
@@ -412,6 +413,17 @@ export default function ClientDetailPage() {
       setSearching(false);
     }
   }
+
+  // Auto-load cached longitudinal analysis from org intelligence
+  useEffect(() => {
+    if (organization?.intelligence) {
+      const intel = organization.intelligence as { longitudinal?: Record<string, unknown> };
+      if (intel.longitudinal) {
+        setTrajectoryData({ analysis: intel.longitudinal } as Record<string, unknown>);
+        setExpandedSections((prev) => ({ ...prev, trajectory: true }));
+      }
+    }
+  }, [organization]);
 
   async function generateTrajectory() {
     setTrajectoryLoading(true);
@@ -1504,6 +1516,122 @@ export default function ClientDetailPage() {
             <UnifiedTimeline items={unifiedTimelineItems} loading={loading} />
           )}
         </section>
+
+        {/* Email Intelligence */}
+        {orgEmails.length > 0 && (
+          <section className="bg-card rounded-xl border border-border p-4">
+            <button
+              onClick={() => toggleSection('emailIntel')}
+              className="w-full flex items-center justify-between mb-3"
+            >
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+                Email Intelligence
+              </h2>
+              {expandedSections.emailIntel ? (
+                <ChevronDown className="w-4 h-4 text-muted" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-muted" />
+              )}
+            </button>
+
+            {expandedSections.emailIntel && (() => {
+              const emailsWithIntel = orgEmails.filter((e) => e.ai_extraction);
+              const sentimentCounts: Record<string, number> = {};
+              const allTopics: string[] = [];
+              const callbacks: string[] = [];
+              const needsReply = orgEmails.filter((e) => e.ai_extraction?.needs_reply);
+
+              for (const email of emailsWithIntel) {
+                const ext = email.ai_extraction as unknown as Record<string, unknown> | null;
+                if (!ext) continue;
+                const sentiment = ext.sentiment as string | undefined;
+                if (sentiment) sentimentCounts[sentiment] = (sentimentCounts[sentiment] || 0) + 1;
+                const topics = ext.key_topics as string[] | undefined;
+                if (Array.isArray(topics)) allTopics.push(...topics);
+                const cbs = ext.callback_opportunities as string[] | undefined;
+                if (Array.isArray(cbs)) callbacks.push(...cbs);
+              }
+
+              const topTopics = [...new Set(allTopics)].slice(0, 8);
+              const uniqueCallbacks = [...new Set(callbacks)].slice(0, 5);
+
+              return (
+                <div className="space-y-3">
+                  {/* Sentiment Overview */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-xs text-muted">Sentiment:</span>
+                    {Object.entries(sentimentCounts).map(([s, count]) => (
+                      <span
+                        key={s}
+                        className={cn(
+                          'text-xs px-2 py-0.5 rounded-full font-medium',
+                          s === 'positive' && 'bg-success/20 text-success',
+                          s === 'negative' && 'bg-danger/20 text-danger',
+                          s === 'concerned' && 'bg-warning/20 text-warning',
+                          s === 'neutral' && 'bg-muted/20 text-muted'
+                        )}
+                      >
+                        {s}: {count}
+                      </span>
+                    ))}
+                    {Object.keys(sentimentCounts).length === 0 && (
+                      <span className="text-xs text-muted/60">No sentiment data</span>
+                    )}
+                  </div>
+
+                  {/* Topics */}
+                  {topTopics.length > 0 && (
+                    <div>
+                      <span className="text-xs text-muted block mb-1">Key Topics:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {topTopics.map((topic) => (
+                          <span key={topic} className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                            {topic}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Callbacks */}
+                  {uniqueCallbacks.length > 0 && (
+                    <div>
+                      <span className="text-xs text-muted block mb-1">Callback Opportunities:</span>
+                      <ul className="space-y-1">
+                        {uniqueCallbacks.map((cb, i) => (
+                          <li key={i} className="text-xs text-foreground/80 flex items-start gap-1.5">
+                            <Lightbulb className="w-3 h-3 text-warning flex-shrink-0 mt-0.5" />
+                            {cb}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Needs Reply */}
+                  {needsReply.length > 0 && (
+                    <div className="border-t border-border/50 pt-2">
+                      <span className="text-xs text-warning font-medium">
+                        {needsReply.length} email{needsReply.length > 1 ? 's' : ''} awaiting reply
+                      </span>
+                      <div className="mt-1 space-y-1">
+                        {needsReply.slice(0, 3).map((email) => (
+                          <div key={email.id} className="text-xs text-muted truncate">
+                            {email.sender || 'Unknown'}: {email.subject}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {emailsWithIntel.length === 0 && (
+                    <p className="text-xs text-muted/60">Email intelligence not yet processed</p>
+                  )}
+                </div>
+              );
+            })()}
+          </section>
+        )}
 
         {/* Visual Interaction Timeline */}
         {timelineEntries.length > 0 && (

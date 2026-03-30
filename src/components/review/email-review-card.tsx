@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Check, CheckSquare, X, Edit2, Mail, Save, Pencil } from 'lucide-react';
+import { Check, CheckSquare, X, Edit2, Mail, Save, Pencil, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import type { ReviewEmail, CommitmentType } from '@/types/database';
 import { getCommitmentTypeLabel, getCommitmentTypeColor, cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -11,6 +11,7 @@ interface EmailReviewCardProps {
   onAcceptAll: (emailId: string, edits?: Record<number, { title?: string; commitment_type?: string; suggested_due?: string | null }>) => void;
   onAcceptSelected: (emailId: string, indices: number[], edits?: Record<number, { title?: string; commitment_type?: string; suggested_due?: string | null }>) => void;
   onDismiss: (emailId: string) => void;
+  compact?: boolean;
 }
 
 const COMMITMENT_TYPES: { value: CommitmentType; label: string }[] = [
@@ -29,6 +30,7 @@ export function EmailReviewCard({
   onAcceptAll,
   onAcceptSelected,
   onDismiss,
+  compact = false,
 }: EmailReviewCardProps) {
   const commitments = email.ai_extraction?.commitments ?? [];
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -90,6 +92,32 @@ export function EmailReviewCard({
       : email.body_preview;
 
   const swipeProgress = Math.min(Math.abs(swipeX) / 100, 1);
+
+  if (compact) {
+    const isReceived = !!(email.sender && email.sender_email);
+    return (
+      <div className="flex items-center gap-3 px-3 py-2 text-sm">
+        <div className="flex-shrink-0">
+          {isReceived ? (
+            <ArrowDownLeft className="w-3.5 h-3.5 text-primary/60" />
+          ) : (
+            <ArrowUpRight className="w-3.5 h-3.5 text-muted/60" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted truncate">
+              {email.sender || 'Unknown'}
+            </span>
+            <span className="text-xs text-muted/60">
+              {format(new Date(email.received_at), 'MMM d, h:mm a')}
+            </span>
+          </div>
+          <p className="text-xs text-muted/80 truncate">{email.subject}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="swipe-container rounded-lg overflow-hidden relative">

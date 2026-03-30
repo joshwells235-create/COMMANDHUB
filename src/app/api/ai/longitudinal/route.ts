@@ -220,6 +220,22 @@ Analyze the full trajectory of this engagement and return JSON only (no markdown
     }
     const analysis = JSON.parse(jsonStr);
 
+    // Persist analysis to organization record
+    await supabase
+      .from('organizations')
+      .update({
+        intelligence: {
+          longitudinal: analysis,
+          longitudinal_analyzed_at: new Date().toISOString(),
+          total_sessions: transcripts.length,
+          date_range: {
+            first_session: transcripts[0].transcript_date,
+            last_session: transcripts[transcripts.length - 1].transcript_date,
+          },
+        },
+      })
+      .eq('id', orgId);
+
     return Response.json({
       org_id: orgId,
       org_name: org.name,

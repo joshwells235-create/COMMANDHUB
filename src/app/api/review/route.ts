@@ -9,7 +9,7 @@ export async function GET() {
 
     const { data: emails, error } = await supabase
       .from('emails')
-      .select('*, organization:organizations(id, name, strategic_value, status)')
+      .select('*, conversation_id, organization:organizations(id, name, strategic_value, status)')
       .eq('review_status', 'pending')
       .eq('is_processed', true)
       .order('received_at', { ascending: false });

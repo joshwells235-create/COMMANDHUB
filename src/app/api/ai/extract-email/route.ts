@@ -240,6 +240,88 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
     })
     .eq('id', email.id);
 
+  // Auto-discover contacts from received emails
+  const createdContactIds: string[] = [];
+  if (!isSent && !extraction.is_noise && extraction.new_contacts_discovered?.length > 0) {
+    for (const discovered of extraction.new_contacts_discovered) {
+      try {
+        // Skip entries without a name
+        if (!discovered.name?.trim()) continue;
+
+        // If the discovered contact has an email, check for duplicates
+        if (discovered.email) {
+          const { data: existingByEmail } = await supabase
+            .from('contacts')
+            .select('id')
+            .ilike('email', discovered.email.trim())
+            .limit(1);
+
+          if (existingByEmail && existingByEmail.length > 0) continue;
+        }
+
+        // Also check by name + org to avoid duplicates when email is unknown
+        if (!discovered.email) {
+          const nameQuery = supabase
+            .from('contacts')
+            .select('id')
+            .ilike('name', discovered.name.trim())
+            .limit(1);
+
+          // Scope to same org if we have one
+          if (matchedOrgId) {
+            nameQuery.eq('org_id', matchedOrgId);
+          }
+
+          const { data: existingByName } = await nameQuery;
+          if (existingByName && existingByName.length > 0) continue;
+        }
+
+        // Try to match org from the discovered contact's organization field
+        let contactOrgId = matchedOrgId;
+        if (!contactOrgId && discovered.organization) {
+          const discoveredOrg = orgs.find(
+            (o) => o.name.toLowerCase() === discovered.organization.toLowerCase()
+          );
+          if (discoveredOrg) contactOrgId = discoveredOrg.id;
+        }
+
+        const { data: newContact, error: contactError } = await supabase
+          .from('contacts')
+          .insert({
+            name: discovered.name.trim(),
+            email: discovered.email?.trim() || null,
+            role: discovered.apparent_role || null,
+            org_id: contactOrgId,
+            category: 'business',
+            relationship_type: 'discovered',
+            notes: 'Auto-discovered from email',
+          })
+          .select('id')
+          .single();
+
+        if (!contactError && newContact) {
+          createdContactIds.push(newContact.id);
+        }
+      } catch (contactErr) {
+        // Log but don't break email processing
+        console.error('Failed to auto-create contact from email discovery:', contactErr);
+      }
+    }
+
+    // Update the email's ai_extraction to note which contacts were created
+    if (createdContactIds.length > 0) {
+      const updatedExtraction = {
+        ...extraction,
+        contacts_auto_created: createdContactIds.length,
+        contacts_auto_created_ids: createdContactIds,
+      };
+      await supabase
+        .from('emails')
+        .update({ ai_extraction: updatedExtraction })
+        .eq('id', email.id);
+    }
+  }
+
   // Auto-resolve commitments that Josh's sent email addresses
   if (isSent && extraction.resolved_commitment_ids?.length > 0) {
     for (const commitmentId of extraction.resolved_commitment_ids) {
