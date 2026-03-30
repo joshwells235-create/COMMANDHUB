@@ -1432,7 +1432,7 @@ ${daysSinceContact !== null ? `Days since last session: ${daysSinceContact}` : '
             clientBlock += `\n- ${c.name}`;
             if (c.title) clientBlock += `, ${c.title}`;
             if (c.role) clientBlock += ` (${c.role})`;
-            if (c.relationship_type) clientBlock += ` [${c.relationship_type}]`;
+            if (c.relationship_type && c.relationship_type.length > 0) clientBlock += ` [${Array.isArray(c.relationship_type) ? c.relationship_type.join(', ') : c.relationship_type}]`;
             if (c.email) clientBlock += ` <${c.email}>`;
             if (c.phone) clientBlock += ` ph:${c.phone}`;
             if (c.coaching_focus) clientBlock += `\n  Coaching focus: ${c.coaching_focus}`;

@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
       title: body.title || null,
       company: body.company || null,
       category: body.category || 'business',
-      relationship_type: body.relationship_type || null,
+      relationship_type: body.relationship_type && body.relationship_type.length > 0 ? body.relationship_type : [],
       personality_notes: body.personality_notes || null,
       coaching_focus: body.coaching_focus || null,
       communication_style: body.communication_style || null,

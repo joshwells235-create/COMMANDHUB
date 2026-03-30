@@ -51,7 +51,7 @@ export interface Contact {
   title: string | null;
   company: string | null;
   category: ContactCategory;
-  relationship_type: string | null;
+  relationship_type: string[] | null;
   personality_notes: string | null;
   coaching_focus: string | null;
   communication_style: string | null;
