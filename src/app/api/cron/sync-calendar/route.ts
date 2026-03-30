@@ -6,7 +6,11 @@ export const maxDuration = 60;
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const url = new URL(request.url);
+  const keyParam = url.searchParams.get('key');
+  const secret = process.env.CRON_SECRET;
+
+  if (authHeader !== `Bearer ${secret}` && keyParam !== secret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
