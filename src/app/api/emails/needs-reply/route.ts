@@ -6,13 +6,14 @@ export async function GET() {
   try {
     const supabase = createServerClient();
 
-    // Fetch all processed pending emails - filter for needs_reply in code
+    // Fetch all processed pending RECEIVED emails - filter for needs_reply in code
     // since Supabase JSON querying can be tricky
     const { data, error } = await supabase
       .from('emails')
       .select('*, organization:organizations(id, name)')
       .eq('is_processed', true)
       .neq('review_status', 'dismissed')
+      .neq('folder', 'sent')
       .order('received_at', { ascending: false });
 
     if (error) {
