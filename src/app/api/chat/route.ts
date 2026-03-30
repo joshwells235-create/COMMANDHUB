@@ -1039,10 +1039,21 @@ export async function POST(request: NextRequest) {
     // Always fetch top commitments for general context
     const { data: commitments } = await supabase
       .from('commitments')
-      .select('id, title, commitment_type, owner, due_date, status, escalation_level, organizations(name)')
+      .select('id, title, commitment_type, owner, due_date, status, escalation_level, org_id')
       .in('status', ['pending', 'in_progress', 'waiting', 'snoozed'])
       .order('priority_score', { ascending: false })
       .limit(20);
+
+    // Build org name map for commitments
+    const cmtOrgIds = [...new Set((commitments || []).map((c) => c.org_id).filter(Boolean))];
+    let cmtOrgMap = new Map<string, string>();
+    if (cmtOrgIds.length > 0) {
+      const { data: cmtOrgs } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .in('id', cmtOrgIds);
+      cmtOrgMap = new Map((cmtOrgs || []).map((o: { id: string; name: string }) => [o.id, o.name]));
+    }
 
     if (commitments && commitments.length > 0) {
       const overdueItems = commitments.filter(
@@ -1061,8 +1072,7 @@ ${commitments
   .slice(0, 10)
   .map(
     (c) => {
-      const orgArr = c.organizations as unknown as { name: string }[] | null;
-      const orgName = orgArr?.[0]?.name;
+      const orgName = c.org_id ? cmtOrgMap.get(c.org_id) : null;
       return `- [id:${c.id}] [${c.owner === 'josh' ? 'Josh' : 'Other'}] ${c.title} (${c.commitment_type}${c.due_date ? ', due ' + c.due_date : ''}${orgName ? ', ' + orgName : ''})`;
     }
   )
@@ -1514,8 +1524,22 @@ Today's date: ${todayStr}
 ${mentionedOrgNames ? `Client(s) mentioned in this message: ${mentionedOrgNames}` : ''}
 
 === DATA CONTEXT ===
-${contextParts.join('\n\n')}
-${ragContext}
+${(() => {
+  // Cap total context to ~120k chars (~30k tokens) to stay within model limits
+  const MAX_CONTEXT_CHARS = 120000;
+  let combined = '';
+  for (const part of contextParts) {
+    if (combined.length + part.length > MAX_CONTEXT_CHARS) {
+      combined += '\n\n[Additional context truncated for size]';
+      break;
+    }
+    combined += (combined ? '\n\n' : '') + part;
+  }
+  if (ragContext && combined.length + ragContext.length <= MAX_CONTEXT_CHARS) {
+    combined += ragContext;
+  }
+  return combined;
+})()}
 === END DATA CONTEXT ===
 
 ACTION SYSTEM:
@@ -1571,9 +1595,10 @@ CRITICAL RULES:
 - When Josh asks you to change/edit something, use the appropriate update action
 - Keep responses focused but thorough — give Josh the full picture with specific details from the data`;
 
-    // Build messages for Claude
+    // Build messages for Claude (limit history to last 10 to stay within token limits)
     const claudeMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-    for (const msg of history) {
+    const trimmedHistory = history.slice(-10);
+    for (const msg of trimmedHistory) {
       claudeMessages.push({ role: msg.role, content: msg.content });
     }
     claudeMessages.push({ role: 'user', content: message });
@@ -1629,9 +1654,11 @@ CRITICAL RULES:
       response: structured.message,
     });
   } catch (error) {
-    console.error('Chat API error:', error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errDetails = (error as { status?: number; error?: { message?: string } })?.error?.message || '';
+    console.error('Chat API error:', errMsg, errDetails);
     return NextResponse.json(
-      { error: 'Chat request failed' },
+      { error: 'Chat request failed', details: errMsg.substring(0, 200) },
       { status: 500 }
     );
   }
