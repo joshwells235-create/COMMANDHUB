@@ -28,6 +28,7 @@ import {
   PenLine,
   Pencil,
   Save,
+  Plus,
 } from 'lucide-react';
 import { useClientDetail } from '@/lib/hooks/use-client-detail';
 import type { Transcript, TranscriptTheme, LanguageLeak } from '@/lib/hooks/use-client-detail';
@@ -155,6 +156,8 @@ export default function ClientDetailPage() {
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
   const [contactEditFields, setContactEditFields] = useState<Record<string, string>>({});
   const [contactSaving, setContactSaving] = useState(false);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [newContact, setNewContact] = useState({ name: '', role: '', email: '', relationship_type: '', title: '', notes: '' });
 
   function startEditingContact(c: { id: string; name: string; role: string | null; email: string | null; relationship_type: string | null; notes: string | null }) {
     setEditingContactId(c.id);
@@ -187,6 +190,31 @@ export default function ClientDetailPage() {
       refresh();
     } catch {
       // stay in edit mode
+    } finally {
+      setContactSaving(false);
+    }
+  }
+
+  async function addContact() {
+    if (!newContact.name.trim()) return;
+    setContactSaving(true);
+    try {
+      const res = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...newContact,
+          org_id: orgId,
+          category: 'business',
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to create contact');
+      toast.success(`${newContact.name} added`);
+      setShowAddContact(false);
+      setNewContact({ name: '', role: '', email: '', relationship_type: '', title: '', notes: '' });
+      refresh();
+    } catch {
+      toast.error('Failed to add contact');
     } finally {
       setContactSaving(false);
     }
@@ -1370,16 +1398,88 @@ export default function ClientDetailPage() {
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
               Contacts ({contacts.length})
             </h2>
-            {expandedSections.contacts ? (
-              <ChevronDown className="w-4 h-4 text-muted" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-muted" />
-            )}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowAddContact(!showAddContact); }}
+                className="text-primary hover:text-primary/80 transition-colors"
+                title="Add contact"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              {expandedSections.contacts ? (
+                <ChevronDown className="w-4 h-4 text-muted" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-muted" />
+              )}
+            </div>
           </button>
 
           {expandedSections.contacts && (
             <>
-              {contacts.length === 0 ? (
+              {/* Add Contact Form */}
+              {showAddContact && (
+                <div className="bg-card rounded-lg p-4 border border-primary/30 mb-2 space-y-2">
+                  <h4 className="text-xs font-semibold text-primary uppercase tracking-wider flex items-center gap-1">
+                    <Plus className="w-3.5 h-3.5" /> New Contact
+                  </h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Name *</label>
+                      <input type="text" value={newContact.name}
+                        onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+                        placeholder="Full name"
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Title</label>
+                      <input type="text" value={newContact.title}
+                        onChange={(e) => setNewContact({ ...newContact, title: e.target.value })}
+                        placeholder="e.g. VP Sales, CEO..."
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Email</label>
+                      <input type="email" value={newContact.email}
+                        onChange={(e) => setNewContact({ ...newContact, email: e.target.value })}
+                        placeholder="email@example.com"
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Role</label>
+                      <input type="text" value={newContact.role}
+                        onChange={(e) => setNewContact({ ...newContact, role: e.target.value })}
+                        placeholder="e.g. coachee, sponsor..."
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Relationship</label>
+                      <input type="text" value={newContact.relationship_type}
+                        onChange={(e) => setNewContact({ ...newContact, relationship_type: e.target.value })}
+                        placeholder="e.g. champion, decision_maker..."
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted uppercase tracking-wide">Notes</label>
+                      <input type="text" value={newContact.notes}
+                        onChange={(e) => setNewContact({ ...newContact, notes: e.target.value })}
+                        placeholder="Quick note..."
+                        className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button onClick={addContact} disabled={contactSaving || !newContact.name.trim()}
+                      className="flex items-center gap-1 px-3 py-1.5 btn-gradient text-white rounded-md text-xs font-medium disabled:opacity-50">
+                      {contactSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Add
+                    </button>
+                    <button onClick={() => setShowAddContact(false)}
+                      className="px-3 py-1.5 bg-card-hover text-muted rounded-md text-xs font-medium hover:text-foreground">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {contacts.length === 0 && !showAddContact ? (
                 <p className="text-sm text-muted/60 py-3">
                   No contacts recorded for this client.
                 </p>
