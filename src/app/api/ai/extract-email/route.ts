@@ -47,7 +47,7 @@ export async function extractCommitmentsFromEmail(
 
   // Fetch orgs, contacts, and pending commitments in parallel
   const [orgRes, contactRes, pendingRes] = await Promise.all([
-    supabase.from('organizations').select('name, id, strategic_value, status'),
+    supabase.from('organizations').select('name, id, strategic_value, status, is_own_business'),
     supabase.from('contacts').select('name, id, org_id, role, email, relationship_type'),
     // For sent emails: fetch Josh's pending commitments (to check if he resolved them)
     // For received emails: fetch waiting_on commitments (to check if other party delivered)
@@ -71,7 +71,11 @@ export async function extractCommitmentsFromEmail(
   const contacts = contactRes.data || [];
   const pendingCommitments = pendingRes.data || [];
 
-  const orgList = orgs.map((o) => `${o.name} (${o.status}, ${o.strategic_value})`).join(', ');
+  const ownBusiness = orgs.find((o) => o.is_own_business);
+  const orgList = orgs
+    .filter((o) => !o.is_own_business)
+    .map((o) => `${o.name} (${o.status}, ${o.strategic_value})`)
+    .join(', ');
   const contactList = contacts
     .map((c) => {
       const org = orgs.find((o) => o.id === c.org_id);
@@ -107,8 +111,10 @@ export async function extractCommitmentsFromEmail(
         content: `You are an executive assistant and intelligence analyst for Josh Wells, a Partner at LeadShift, a leadership development consulting firm. You are analyzing an email to extract actionable intelligence — not just commitments, but everything useful for client relationships, session prep, and business development.
 
 ${directionContext}
+${ownBusiness ? `
+IMPORTANT: "${ownBusiness.name}" is Josh's OWN business — not a client. Emails to/from LeadShift team members (e.g. Brian Burlas, Dan Guglielmo, Steve Cundall) are INTERNAL business communications. Categorize these as "internal" not "client". Do not treat LeadShift colleagues as clients or external contacts.` : ''}
 
-Known organizations Josh works with: ${orgList}
+Known CLIENT organizations Josh works with: ${orgList}
 Known contacts:
 ${contactList}
 ${pendingContext}

@@ -33,6 +33,7 @@ export interface Organization {
   primary_contact_id: string | null;
   description: string | null;
   intelligence: Record<string, unknown> | null;
+  is_own_business: boolean;
   created_at: string;
   updated_at: string;
 }

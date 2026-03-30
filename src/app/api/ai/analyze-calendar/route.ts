@@ -29,14 +29,15 @@ export async function POST(request: NextRequest) {
     // Fetch orgs and contacts for matching
     const { data: orgs } = await supabase
       .from('organizations')
-      .select('name, id, strategic_value')
+      .select('name, id, strategic_value, is_own_business')
       .eq('status', 'active');
 
     const { data: contacts } = await supabase
       .from('contacts')
       .select('name, id, org_id, role, relationship_type');
 
-    const orgList = (orgs || []).map((o) => o.name).join(', ');
+    const ownBusiness = (orgs || []).find((o) => o.is_own_business);
+    const orgList = (orgs || []).filter((o) => !o.is_own_business).map((o) => o.name).join(', ');
     const contactList = (contacts || [])
       .map((c) => {
         const org = orgs?.find((o) => o.id === c.org_id);
@@ -58,8 +59,10 @@ export async function POST(request: NextRequest) {
         {
           role: 'user',
           content: `You are an executive assistant for Josh Wells, a leadership development consultant and Partner at LeadShift. You are analyzing a calendar event to help Josh prepare.
+${ownBusiness ? `
+IMPORTANT: "${ownBusiness.name}" is Josh's OWN business — not a client. Meetings with LeadShift team members are INTERNAL meetings. Classify these as event_type "internal_leadshift" and match org to "${ownBusiness.name}". Do not treat LeadShift colleagues as clients.` : ''}
 
-Known organizations Josh works with: ${orgList}
+Known CLIENT organizations Josh works with: ${orgList}
 Known contacts:
 ${contactList}
 
