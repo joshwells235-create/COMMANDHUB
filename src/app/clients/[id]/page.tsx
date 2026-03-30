@@ -290,7 +290,7 @@ export default function ClientDetailPage() {
 
   // Contact edit state
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
-  const [contactEditFields, setContactEditFields] = useState<Record<string, string>>({});
+  const [contactEditFields, setContactEditFields] = useState<Record<string, string | string[]>>({});
   const [contactSaving, setContactSaving] = useState(false);
   const [showAddContact, setShowAddContact] = useState(false);
   const [newContact, setNewContact] = useState({ name: '', role: '', email: '', relationship_type: '', title: '', notes: '' });
@@ -414,13 +414,13 @@ export default function ClientDetailPage() {
     }
   }
 
-  function startEditingContact(c: { id: string; name: string; role: string | null; email: string | null; relationship_type: string | null; notes: string | null }) {
+  function startEditingContact(c: { id: string; name: string; role: string | null; email: string | null; relationship_type: string[] | null; notes: string | null }) {
     setEditingContactId(c.id);
     setContactEditFields({
       name: c.name,
       role: c.role || '',
       email: c.email || '',
-      relationship_type: c.relationship_type || '',
+      relationship_type: c.relationship_type || [],
       notes: c.notes || '',
     });
   }
@@ -2443,7 +2443,7 @@ export default function ClientDetailPage() {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => saveContactEdit(contact.id)}
-                              disabled={contactSaving || !contactEditFields.name?.trim()}
+                              disabled={contactSaving || !(typeof contactEditFields.name === 'string' && contactEditFields.name.trim())}
                               className="flex items-center gap-1 px-3 py-1.5 btn-gradient text-white rounded-md text-xs font-medium disabled:opacity-50"
                             >
                               {contactSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
@@ -2466,11 +2466,11 @@ export default function ClientDetailPage() {
                             </p>
                             <div className="flex items-center gap-1.5 text-xs text-muted">
                               {contact.role && <span>{contact.role}</span>}
-                              {contact.role && contact.relationship_type && (
+                              {contact.role && contact.relationship_type && contact.relationship_type.length > 0 && (
                                 <span>&middot;</span>
                               )}
-                              {contact.relationship_type && (
-                                <span>{contact.relationship_type}</span>
+                              {contact.relationship_type && contact.relationship_type.length > 0 && (
+                                <span>{contact.relationship_type.map((rt: string) => rt.replace(/_/g, ' ')).join(', ')}</span>
                               )}
                             </div>
                           </div>

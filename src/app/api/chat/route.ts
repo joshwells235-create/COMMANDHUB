@@ -1092,7 +1092,7 @@ export async function POST(request: NextRequest) {
     // Always fetch ALL orgs (needed for action resolution and context)
     const { data: allOrgs } = await supabase
       .from('organizations')
-      .select('id, name, status, strategic_value, industry');
+      .select('id, name, status, strategic_value, industry, is_own_business');
 
     const orgList = allOrgs || [];
 
@@ -1212,9 +1212,11 @@ ${nextWeek.map(formatEvent).join('\n')}`);
     }
 
     // Always include client list for context
+    const ownBiz = orgList.find((o) => o.is_own_business);
+    const clientOrgs = orgList.filter((o) => !o.is_own_business);
     if (orgList.length > 0) {
-      contextParts.push(`ALL CLIENTS:
-${orgList.map((o) => `- [id:${o.id}] ${o.name} (${o.status}, ${o.strategic_value}, ${o.industry || 'no industry'})`).join('\n')}`);
+      contextParts.push(`${ownBiz ? `JOSH'S OWN BUSINESS: ${ownBiz.name} [id:${ownBiz.id}] — This is Josh's company, NOT a client. LeadShift team members are colleagues, not clients.\n\n` : ''}ALL CLIENTS:
+${clientOrgs.map((o) => `- [id:${o.id}] ${o.name} (${o.status}, ${o.strategic_value}, ${o.industry || 'no industry'})`).join('\n')}`);
     }
 
     // Include Josh's FULL profile context (all profile types)
@@ -1430,7 +1432,7 @@ ${daysSinceContact !== null ? `Days since last session: ${daysSinceContact}` : '
             clientBlock += `\n- ${c.name}`;
             if (c.title) clientBlock += `, ${c.title}`;
             if (c.role) clientBlock += ` (${c.role})`;
-            if (c.relationship_type) clientBlock += ` [${c.relationship_type}]`;
+            if (c.relationship_type && c.relationship_type.length > 0) clientBlock += ` [${Array.isArray(c.relationship_type) ? c.relationship_type.join(', ') : c.relationship_type}]`;
             if (c.email) clientBlock += ` <${c.email}>`;
             if (c.phone) clientBlock += ` ph:${c.phone}`;
             if (c.coaching_focus) clientBlock += `\n  Coaching focus: ${c.coaching_focus}`;

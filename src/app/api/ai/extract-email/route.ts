@@ -47,23 +47,35 @@ export async function extractCommitmentsFromEmail(
 
   // Fetch orgs, contacts, and pending commitments in parallel
   const [orgRes, contactRes, pendingRes] = await Promise.all([
-    supabase.from('organizations').select('name, id, strategic_value, status'),
+    supabase.from('organizations').select('name, id, strategic_value, status, is_own_business'),
     supabase.from('contacts').select('name, id, org_id, role, email, relationship_type'),
+    // For sent emails: fetch Josh's pending commitments (to check if he resolved them)
+    // For received emails: fetch waiting_on commitments (to check if other party delivered)
     isSent
       ? supabase
           .from('commitments')
           .select('id, title, description, commitment_type, owner, other_party, org_id, status')
           .in('status', ['pending', 'in_progress', 'waiting'])
           .order('priority_score', { ascending: false })
-          .limit(50)
-      : Promise.resolve({ data: [] }),
+          .limit(100)
+      : supabase
+          .from('commitments')
+          .select('id, title, description, commitment_type, owner, other_party, org_id, status')
+          .eq('commitment_type', 'waiting_on')
+          .in('status', ['pending', 'in_progress', 'waiting'])
+          .order('created_at', { ascending: false })
+          .limit(100),
   ]);
 
   const orgs = orgRes.data || [];
   const contacts = contactRes.data || [];
   const pendingCommitments = pendingRes.data || [];
 
-  const orgList = orgs.map((o) => `${o.name} (${o.status}, ${o.strategic_value})`).join(', ');
+  const ownBusiness = orgs.find((o) => o.is_own_business);
+  const orgList = orgs
+    .filter((o) => !o.is_own_business)
+    .map((o) => `${o.name} (${o.status}, ${o.strategic_value})`)
+    .join(', ');
   const contactList = contacts
     .map((c) => {
       const org = orgs.find((o) => o.id === c.org_id);
@@ -77,10 +89,13 @@ export async function extractCommitmentsFromEmail(
         .join(', ')
     : 'Unknown';
 
-  // Build the pending commitments context for sent emails
-  const pendingContext = isSent && pendingCommitments.length > 0
-    ? `\n\nPENDING COMMITMENTS (check if this sent email resolves any of these):\n${pendingCommitments.map((c) => `- [ID:${c.id}] "${c.title}" (${c.commitment_type}, owner: ${c.owner}${c.other_party ? `, with: ${c.other_party}` : ''})`).join('\n')}`
-    : '';
+  // Build the pending commitments context
+  let pendingContext = '';
+  if (isSent && pendingCommitments.length > 0) {
+    pendingContext = `\n\nPENDING COMMITMENTS (check if this sent email resolves any of these):\n${pendingCommitments.map((c) => `- [ID:${c.id}] "${c.title}" (${c.commitment_type}, owner: ${c.owner}${c.other_party ? `, with: ${c.other_party}` : ''})`).join('\n')}`;
+  } else if (!isSent && pendingCommitments.length > 0) {
+    pendingContext = `\n\nWAITING_ON COMMITMENTS (things Josh is waiting for others to deliver — check if this received email resolves any):\n${pendingCommitments.map((c) => `- [ID:${c.id}] "${c.title}" (waiting on: ${c.other_party || 'unknown'}${c.org_id ? '' : ''})`).join('\n')}`;
+  }
 
   const directionContext = isSent
     ? `This is a SENT email — Josh wrote this. Analyze what Josh is promising, delivering, or following up on. This tells you what Josh is actively doing.`
@@ -96,8 +111,10 @@ export async function extractCommitmentsFromEmail(
         content: `You are an executive assistant and intelligence analyst for Josh Wells, a Partner at LeadShift, a leadership development consulting firm. You are analyzing an email to extract actionable intelligence — not just commitments, but everything useful for client relationships, session prep, and business development.
 
 ${directionContext}
+${ownBusiness ? `
+IMPORTANT: "${ownBusiness.name}" is Josh's OWN business — not a client. Emails to/from LeadShift team members (e.g. Brian Burlas, Dan Guglielmo, Steve Cundall) are INTERNAL business communications. Categorize these as "internal" not "client". Do not treat LeadShift colleagues as clients or external contacts.` : ''}
 
-Known organizations Josh works with: ${orgList}
+Known CLIENT organizations Josh works with: ${orgList}
 Known contacts:
 ${contactList}
 ${pendingContext}
@@ -132,8 +149,27 @@ CRITICAL RULES:
 - When someone OTHER than Josh promises to do something, set owner="other" and commitment_type="waiting_on". Do NOT put these on Josh's plate.
 - Do NOT create commitments for attending meetings, joining calls, or showing up to events. The calendar handles scheduling. Only create commitments for actual action items — things to prepare, send, review, or follow up on.
 - Do NOT create commitments for recurring personal routines (sleep, deep work blocks, exercise, meals, travel logistics). These are calendar context, not actionable tasks.
+
+COMMITMENT QUALITY BAR — BE SELECTIVE:
+Only create a commitment if ALL of these are true:
+1. There is a SPECIFIC, CONCRETE action (not vague like "think about X" or "keep in mind")
+2. There is a clear person responsible (Josh or a named other party)
+3. It requires actual effort — not just acknowledging, reading, or noting something
+4. It is NOT something that will naturally happen via normal workflow (e.g. "respond to this email" when Josh is already in the thread)
+5. It would be genuinely useful to track — if Josh forgot about it, something would fall through the cracks
+
+Do NOT create commitments for:
+- Generic pleasantries or "let's stay in touch" — too vague
+- "Review this email" or "Read the attachment" — these happen naturally
+- Scheduling meetings — the calendar handles that
+- Confirming attendance or RSVPs
+- Information-only items ("FYI: the report is attached")
+- Trivial or low-stakes items that don't need tracking
+
+When in doubt, SKIP IT. Fewer high-quality commitments are far better than many low-quality ones. Aim for 0-3 commitments per email, not 5+.
 ${isSent ? `
-RESOLVED COMMITMENTS — compare this email against the PENDING COMMITMENTS list above. If Josh's sent email appears to fulfill or address any pending commitment, list the commitment IDs that should be marked complete or in-progress.` : ''}
+RESOLVED COMMITMENTS — compare this email against the PENDING COMMITMENTS list above. If Josh's sent email appears to fulfill or address any pending commitment, list the commitment IDs that should be marked complete or in-progress.` : `
+RESOLVED WAITING_ON ITEMS — compare this received email against the WAITING_ON COMMITMENTS list above. If the sender is delivering on something Josh was waiting for (e.g. they sent a document Josh requested, they confirmed something Josh was waiting on, they completed a task), list those commitment IDs as resolved. Only mark as resolved if the email clearly shows the item was delivered or completed — not just acknowledged.`}
 
 CLIENT INTELLIGENCE — signals about the client relationship:
 - Sentiment: What's the emotional tone? (positive, neutral, concerned, frustrated, excited)
@@ -340,10 +376,10 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
     }
   }
 
-  // Auto-resolve commitments that Josh's sent email addresses
-  if (isSent && extraction.resolved_commitment_ids?.length > 0) {
+  // Auto-resolve commitments from both sent and received emails
+  if (extraction.resolved_commitment_ids?.length > 0) {
     for (const commitmentId of extraction.resolved_commitment_ids) {
-      // Verify the commitment exists and is pending
+      // Verify the commitment exists and is in an active status
       const { data: existing } = await supabase
         .from('commitments')
         .select('id, status')
@@ -360,11 +396,14 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
           })
           .eq('id', commitmentId);
 
-        // Log the auto-completion
+        const resolveReason = isSent
+          ? `Auto-completed: Josh sent email "${email.subject}" which addresses this commitment`
+          : `Auto-completed: Received email "${email.subject}" from ${email.sender || 'unknown'} which delivers on this waiting item`;
+
         await supabase.from('commitment_activity').insert({
           commitment_id: commitmentId,
           activity_type: 'completed',
-          description: `Auto-completed: Josh sent email "${email.subject}" which addresses this commitment`,
+          description: resolveReason,
           metadata: { source: 'email_auto_resolve', email_id: email.id },
         });
       }
@@ -384,6 +423,23 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
         );
         if (matchedContact) contactId = matchedContact.id;
       }
+
+      // Deduplication: check for existing active commitment with similar title for same org
+      const dedupTitle = commitment.title.toLowerCase().trim();
+      const { data: duplicates } = await supabase
+        .from('commitments')
+        .select('id, title')
+        .in('status', ['pending', 'in_progress', 'waiting'])
+        .or(matchedOrgId ? `org_id.eq.${matchedOrgId}` : 'org_id.is.null');
+
+      const isDuplicate = duplicates?.some((d) => {
+        const existingTitle = d.title.toLowerCase().trim();
+        return existingTitle === dedupTitle
+          || existingTitle.includes(dedupTitle)
+          || dedupTitle.includes(existingTitle);
+      });
+
+      if (isDuplicate) continue;
 
       await supabase.from('commitments').insert({
         title: commitment.title,

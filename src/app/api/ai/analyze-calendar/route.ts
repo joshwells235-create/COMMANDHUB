@@ -29,14 +29,15 @@ export async function POST(request: NextRequest) {
     // Fetch orgs and contacts for matching
     const { data: orgs } = await supabase
       .from('organizations')
-      .select('name, id, strategic_value')
+      .select('name, id, strategic_value, is_own_business')
       .eq('status', 'active');
 
     const { data: contacts } = await supabase
       .from('contacts')
       .select('name, id, org_id, role, relationship_type');
 
-    const orgList = (orgs || []).map((o) => o.name).join(', ');
+    const ownBusiness = (orgs || []).find((o) => o.is_own_business);
+    const orgList = (orgs || []).filter((o) => !o.is_own_business).map((o) => o.name).join(', ');
     const contactList = (contacts || [])
       .map((c) => {
         const org = orgs?.find((o) => o.id === c.org_id);
@@ -58,8 +59,10 @@ export async function POST(request: NextRequest) {
         {
           role: 'user',
           content: `You are an executive assistant for Josh Wells, a leadership development consultant and Partner at LeadShift. You are analyzing a calendar event to help Josh prepare.
+${ownBusiness ? `
+IMPORTANT: "${ownBusiness.name}" is Josh's OWN business — not a client. Meetings with LeadShift team members are INTERNAL meetings. Classify these as event_type "internal_leadshift" and match org to "${ownBusiness.name}". Do not treat LeadShift colleagues as clients.` : ''}
 
-Known organizations Josh works with: ${orgList}
+Known CLIENT organizations Josh works with: ${orgList}
 Known contacts:
 ${contactList}
 
@@ -81,6 +84,11 @@ CRITICAL: Do NOT create commitments for simply attending or showing up to the me
 - BAD: "Attend meeting with X", "Join call with Y", "Be at workshop", "Show up to session"
 - BAD: "Maintain sleep schedule", "Prepare sleep environment", "Prepare for deep work", "Confirm dinner"
 - SKIP ENTIRELY for recurring personal blocks (Sleep, Deep Work, Travel, workouts, meals). These are calendar context, not commitments.
+
+COMMITMENT QUALITY BAR — BE VERY SELECTIVE:
+Only create a commitment if it requires SPECIFIC, CONCRETE preparation work that Josh would genuinely forget without a reminder. For most routine meetings (especially recurring coaching sessions), Josh already knows how to prepare — do NOT create generic prep items like "review notes" or "prepare questions" unless there is something specific and unusual about this particular meeting.
+
+Create 0 commitments for most events. Only create 1-2 for events that clearly need specific preparation or deliverables. When in doubt, skip it.
 
 For prep_notes, give Josh specific, helpful preparation guidance — what to review, what questions to ask, what to bring up, what context to remember. This is his cheat sheet going into the meeting.
 

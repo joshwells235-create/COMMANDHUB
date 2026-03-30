@@ -64,7 +64,7 @@ export default function ContactsPage() {
   const [newContact, setNewContact] = useState({
     name: '', title: '', role: '', email: '', phone: '', linkedin_url: '',
     org_id: '', company: '', category: 'business' as ContactCategory,
-    relationship_type: '', notes: '', personality_notes: '', coaching_focus: '',
+    relationship_type: [] as string[], notes: '', personality_notes: '', coaching_focus: '',
     communication_style: '',
   });
 
@@ -103,7 +103,7 @@ export default function ContactsPage() {
       toast.success(`Added ${newContact.name}`);
       setNewContact({
         name: '', title: '', role: '', email: '', phone: '', linkedin_url: '',
-        org_id: '', company: '', category: 'business', relationship_type: '',
+        org_id: '', company: '', category: 'business', relationship_type: [],
         notes: '', personality_notes: '', coaching_focus: '', communication_style: '',
       });
       setShowAdd(false);
@@ -130,7 +130,7 @@ export default function ContactsPage() {
     }
     if (filterCategory && c.category !== filterCategory) return false;
     if (filterOrg && c.org_id !== filterOrg) return false;
-    if (filterRelationship && c.relationship_type !== filterRelationship) return false;
+    if (filterRelationship && (!c.relationship_type || !c.relationship_type.includes(filterRelationship))) return false;
     return true;
   });
 
@@ -202,16 +202,31 @@ export default function ContactsPage() {
                 onChange={(e) => setNewContact({ ...newContact, title: e.target.value })}
                 className="bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
               />
-              <select
-                value={newContact.relationship_type}
-                onChange={(e) => setNewContact({ ...newContact, relationship_type: e.target.value })}
-                className="bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
-              >
-                <option value="">Relationship type</option>
-                {RELATIONSHIP_TYPES.map((rt) => (
-                  <option key={rt} value={rt}>{rt.replace(/_/g, ' ')}</option>
-                ))}
-              </select>
+              <div className="bg-background border border-border rounded-lg px-3 py-2">
+                <div className="flex flex-wrap gap-1.5 mb-1.5">
+                  {newContact.relationship_type.map((rt) => (
+                    <button key={rt} type="button"
+                      onClick={() => setNewContact({ ...newContact, relationship_type: newContact.relationship_type.filter((t) => t !== rt) })}
+                      className={`text-xs px-2 py-0.5 rounded-full ${relationshipColor[rt] || 'text-muted'} bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-1`}>
+                      {rt.replace(/_/g, ' ')} <X className="w-3 h-3" />
+                    </button>
+                  ))}
+                </div>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value && !newContact.relationship_type.includes(e.target.value)) {
+                      setNewContact({ ...newContact, relationship_type: [...newContact.relationship_type, e.target.value] });
+                    }
+                  }}
+                  className="bg-transparent text-sm focus:outline-none w-full"
+                >
+                  <option value="">{newContact.relationship_type.length ? 'Add another...' : 'Relationship type'}</option>
+                  {RELATIONSHIP_TYPES.filter((rt) => !newContact.relationship_type.includes(rt)).map((rt) => (
+                    <option key={rt} value={rt}>{rt.replace(/_/g, ' ')}</option>
+                  ))}
+                </select>
+              </div>
               <input
                 type="email"
                 placeholder="Email"
@@ -262,7 +277,7 @@ export default function ContactsPage() {
             </div>
 
             {/* Coaching-specific fields */}
-            {(newContact.relationship_type === 'coachee' || newContact.category === 'business') && (
+            {(newContact.relationship_type.includes('coachee') || newContact.category === 'business') && (
               <div className="grid grid-cols-2 gap-3">
                 <textarea
                   placeholder="Coaching focus / what they're working on"
@@ -425,12 +440,14 @@ export default function ContactsPage() {
                           {contact.company}
                         </span>
                       ) : null}
-                      {contact.relationship_type && (
+                      {contact.relationship_type && contact.relationship_type.length > 0 && (
                         <>
                           <span>&middot;</span>
-                          <span className={relationshipColor[contact.relationship_type] || 'text-muted'}>
-                            {contact.relationship_type.replace(/_/g, ' ')}
-                          </span>
+                          {contact.relationship_type.map((rt) => (
+                            <span key={rt} className={relationshipColor[rt] || 'text-muted'}>
+                              {rt.replace(/_/g, ' ')}
+                            </span>
+                          ))}
                         </>
                       )}
                     </div>

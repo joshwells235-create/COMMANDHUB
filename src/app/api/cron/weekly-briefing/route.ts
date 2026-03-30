@@ -330,6 +330,8 @@ Completion rate: ${commitmentsCreatedCount > 0 ? Math.round((commitmentsComplete
           role: 'user',
           content: `You are Josh Wells' chief of staff. Generate his weekly practice report email. This is sent on Sunday evening or early Monday morning to set up the week ahead. It should feel like a comprehensive but scannable debrief of the past week and preview of the next.
 
+NOTE: "Leadshift" / "LeadShift" is Josh's OWN business — not a client. Distinguish between internal LeadShift business activities (team meetings, sales strategy, ops) and client-facing work. LeadShift items should appear under internal/business sections, not mixed in with client work.
+
 REPORTING PERIOD: Past 7 days ending ${todayStr}
 
 WEEK IN NUMBERS:

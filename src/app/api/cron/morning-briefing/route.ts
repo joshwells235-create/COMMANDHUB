@@ -239,7 +239,7 @@ export async function GET(request: Request) {
     if (allOrgIds.size > 0) {
       const { data: briefingOrgs } = await supabase
         .from('organizations')
-        .select('id, name')
+        .select('id, name, is_own_business')
         .in('id', [...allOrgIds]);
       briefingOrgMap = new Map((briefingOrgs || []).map((o: { id: string; name: string }) => [o.id, o.name]));
     }
@@ -337,6 +337,8 @@ export async function GET(request: Request) {
         {
           role: 'user',
           content: `You are Josh Wells' chief of staff. Generate his morning briefing email for ${todayStr} (${today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}). This is the first thing he reads at 7am over coffee on his phone. Make it genuinely useful, crisp, and actionable. Think of it as a daily digest from someone who deeply understands his practice.
+
+NOTE: "Leadshift" / "LeadShift" is Josh's OWN business — not a client. Distinguish between internal LeadShift business activities (team meetings, sales strategy, ops) and client-facing work. LeadShift items should appear under internal/business sections, not mixed in with client work.
 
 TODAY'S SCHEDULE (${(events || []).length} events):
 ${eventsText}

@@ -5,6 +5,8 @@
 ## Overview
 Command Hub is an AI-powered Chief of Staff application built for Josh Wells / LeadShift. It manages client commitments, coaching session transcripts, calendar events, emails, and AI-generated briefings — all surfaced through a Jarvis-themed dark dashboard with an intelligent chatbot ("the Brain").
 
+**LeadShift is Josh's own business** — not a client. The system distinguishes LeadShift (internal) from client organizations via `is_own_business` flag. All AI prompts are aware of this distinction.
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -21,6 +23,7 @@ Command Hub is an AI-powered Chief of Staff application built for Josh Wells / L
 | Icons | `lucide-react` |
 | Date utils | `date-fns` |
 | Charts | Hand-rolled SVG (no charting library) |
+| PDF parsing | `pdf-parse@1.1.1` (v1 API, dynamic require to avoid build-time test file issue) |
 
 ## Design System
 - **Theme**: Jarvis-inspired dark HUD
@@ -46,8 +49,11 @@ src/
 │   ├── briefings/page.tsx          # Browse stored briefings (morning/weekly)
 │   ├── clients/
 │   │   ├── page.tsx                # Client list
-│   │   └── [id]/page.tsx           # Client detail (commitments, transcripts, timeline, contacts)
-│   ├── commitments/page.tsx        # Full commitments view
+│   │   └── [id]/page.tsx           # Client detail (commitments, transcripts, timeline, contacts, assessments)
+│   ├── commitments/page.tsx        # Full commitments view (supports ?view=overdue|today|week|waiting)
+│   ├── contacts/
+│   │   ├── page.tsx                # People list with multi-tag relationship types
+│   │   └── [id]/page.tsx           # Contact detail with assessments
 │   ├── follow-ups/page.tsx         # Follow-up queue
 │   ├── prep/[id]/page.tsx          # AI session prep for a calendar event
 │   ├── review/page.tsx             # Email review inbox
@@ -64,6 +70,10 @@ src/
 │   │   ├── briefings/              # Stored briefings CRUD
 │   │   │   ├── route.ts            #   GET list
 │   │   │   └── [id]/route.ts       #   GET single briefing
+│   │   ├── assessments/
+│   │   │   ├── route.ts            #   GET assessments
+│   │   │   ├── upload/route.ts     #   POST — PDF upload, text extraction, storage
+│   │   │   └── [id]/route.ts       #   DELETE assessment
 │   │   ├── commitments/
 │   │   │   ├── route.ts            #   GET/POST commitments
 │   │   │   └── [id]/
@@ -77,7 +87,7 @@ src/
 │   │   │   ├── route.ts            #   GET/POST contacts
 │   │   │   └── [id]/route.ts       #   PATCH/DELETE contact
 │   │   ├── calendar/route.ts       # Calendar events
-│   │   ├── emails/needs-reply/route.ts
+│   │   ├── emails/needs-reply/route.ts  # Needs-reply queue (filters Josh's own emails + tracks replies)
 │   │   ├── transcripts/
 │   │   │   ├── route.ts            #   GET/POST transcripts
 │   │   │   ├── [id]/route.ts       #   GET single transcript
@@ -94,7 +104,7 @@ src/
 │   │   │   ├── analyze-calendar/route.ts
 │   │   │   ├── cross-client/route.ts
 │   │   │   ├── draft/route.ts      #   AI email/message draft generation
-│   │   │   ├── extract-email/route.ts
+│   │   │   ├── extract-email/route.ts  # Email AI extraction + auto-completion (sent & received)
 │   │   │   ├── follow-up-queue/route.ts
 │   │   │   ├── lifecycle/route.ts
 │   │   │   ├── longitudinal/route.ts
@@ -111,6 +121,7 @@ src/
 │   │   │   ├── sync-calendar/route.ts      # Microsoft Graph calendar sync
 │   │   │   ├── sync-email/route.ts         # Microsoft Graph email sync
 │   │   │   └── wake-snoozed/route.ts
+│   │   ├── admin/bootstrap/route.ts  # Bootstrap josh_profile, requeue emails, org-match backfill
 │   │   └── auth/                    # Microsoft OAuth flow
 │
 ├── components/
@@ -129,6 +140,7 @@ src/
 │   │   ├── intelligence-panel.tsx    # AI intelligence panel
 │   │   ├── lifecycle-tracker.tsx     # Client lifecycle stages
 │   │   ├── practice-intelligence.tsx # Cross-client practice insights
+│   │   ├── proactive-nudges.tsx      # Proactive intelligence nudges
 │   │   ├── relationship-health.tsx   # Relationship health scores
 │   │   └── theme-alerts.tsx          # Cross-client theme detection
 │   ├── drafts/draft-composer.tsx     # AI draft composition UI
@@ -147,6 +159,7 @@ src/
 │   ├── auth.ts                        # Auth utilities
 │   ├── auto-detect-org.ts            # Org auto-detection from text
 │   ├── embeddings.ts                  # Embedding utilities
+│   ├── match-org.ts                   # Shared fuzzy org-matching utility (domain-based)
 │   ├── microsoft-graph.ts            # Microsoft Graph API client
 │   ├── resend.ts                      # Resend email client
 │   ├── utils.ts                       # Shared utilities (cn, etc.)
@@ -175,18 +188,19 @@ supabase/
 ## Database Tables (Supabase/PostgreSQL)
 
 Key tables and their purposes:
-- **organizations** — Clients/orgs with status, strategic_value, industry, notes
-- **contacts** — People linked to organizations (role, email, relationship_type)
+- **organizations** — Clients/orgs with status, strategic_value, industry, notes, `is_own_business` (boolean, true for LeadShift)
+- **contacts** — People linked to organizations (role, email, `relationship_type` is `text[]` array — supports multiple tags like champion, coachee, partner, friend)
 - **engagements** — Business engagements/contracts per org (type, status, value, dates)
 - **commitments** — Core entity: tasks/promises/follow-ups with priority scoring, snooze, escalation
 - **commitment_activity** — Audit log for commitment changes (created, completed, escalated, etc.)
 - **calendar_events** — Synced from Microsoft Graph, with `ai_analysis` JSON (prep_notes, event_type, implied_commitments)
-- **emails** — Synced from Microsoft Graph, with `ai_extraction` JSON (commitments, needs_reply, summary)
+- **emails** — Synced from Microsoft Graph, with `ai_extraction` JSON (commitments, needs_reply, summary, resolved_commitment_ids)
 - **transcripts** — Coaching session transcripts with AI-extracted fields:
   - `summary`, `themes`, `language_leaks`, `breakthroughs`, `growth_areas`
   - `session_arc`, `notable_quotes`, `recommended_focus_next_session`
   - `is_processed` flag (gates visibility to prep/chat/dashboard)
   - `org_id` links to client
+- **assessments** — PDF assessment uploads (PI, EQ-i 2.0, DiSC, MBTI, etc.) with file_url, raw_text, ai_analysis
 - **briefings** — Stored morning/weekly briefing HTML for browsing in-app
 - **josh_profile** — Voice profile, coaching methodology, writing style, theme alerts, priority patterns
 
@@ -199,6 +213,40 @@ export const AI_MODEL = process.env.AI_MODEL || 'claude-sonnet-4-20250514';
 ```
 Change it once, applies everywhere.
 
+### Own Business vs Clients
+Organizations with `is_own_business = true` (LeadShift) are treated differently across all AI prompts:
+- Email extraction categorizes LeadShift emails as "internal" not "client"
+- Calendar analysis classifies LeadShift meetings as "internal_leadshift"
+- Chat/Brain lists LeadShift separately from the client list
+- Briefings separate internal business from client-facing work
+- LeadShift team members (Brian Burlas, Dan Guglielmo, Steve Cundall, etc.) are colleagues, not clients
+
+### Commitment System
+**Creation**: Commitments are extracted from 3 sources — emails, transcripts, and calendar events. All prompts enforce a strict quality bar:
+- Only SPECIFIC, CONCRETE action items with a clear responsible party
+- Skip vague intentions, generic coaching homework, scheduling, FYI items, recurring routines
+- Aim for 0-3 per email, 0-4 per transcript, 0 for most calendar events
+
+**Ownership**: `owner=josh` (Josh's action), `owner=other` with `commitment_type=waiting_on` (tracking others' promises)
+
+**Auto-completion**: Commitments auto-resolve from 3 sources:
+- Sent emails: Josh's sent email matches a pending commitment → marked complete
+- Received emails: incoming email shows someone delivered on a `waiting_on` item → marked complete
+- Transcripts: pending commitments for an org included in AI context, resolved items auto-completed
+
+**Deduplication**: Before creating a commitment, checks for existing active commitments with similar/matching titles for the same org. Prevents cross-source duplicates.
+
+**Types**: promise_made, ask_received, follow_up, waiting_on, deliverable, prep, internal, note_to_self
+**Statuses**: pending, in_progress, snoozed, waiting, completed, cancelled
+
+### Dashboard Stat Cards
+The Overdue, Due Today, This Week, and Waiting On stat cards are clickable links that navigate to `/commitments?view=overdue|today|week|waiting` with the appropriate filter pre-applied.
+
+### Needs-Reply Logic
+`/api/emails/needs-reply` filters out:
+1. Emails where sender is Josh (inbox copies of sent mail)
+2. Emails where Josh already replied in the same conversation thread (uses `conversation_id` to track)
+
 ### Chatbot ("The Brain") — `src/app/api/chat/route.ts`
 The chatbot is the central intelligence hub. Key behaviors:
 - **Auto-detects mentioned orgs** via `detectMentionedOrgs()` — matches against real org list (abbreviations, partial, case-insensitive)
@@ -210,12 +258,14 @@ The chatbot is the central intelligence hub. Key behaviors:
 
 ### Transcript Processing — `src/app/api/transcripts/process/route.ts`
 When a transcript is processed:
-1. AI extracts: summary, themes, language_leaks, breakthroughs, growth_areas, session_arc, notable_quotes, recommended_focus, commitments
+1. AI extracts: summary, themes, language_leaks, breakthroughs, growth_areas, session_arc, notable_quotes, recommended_focus, commitments, resolved_commitment_ids
 2. Sets `is_processed = true` (critical — gates all downstream queries)
-3. Creates commitment records from extracted commitments
-4. Logs `commitment_activity` for each created commitment
-5. Updates org `updated_at` timestamp
-6. Updates engagement session count and notes
+3. Auto-resolves any pending commitments identified as addressed in the session
+4. Creates new commitment records (with deduplication check)
+5. Logs `commitment_activity` for each created/resolved commitment
+6. Updates org `updated_at` timestamp
+7. Updates engagement session count and notes
+8. Session-over-session comparison against last 3 transcripts for same org
 
 ### Session Prep — `src/app/api/prep/route.ts`
 - Fetches last 3 transcripts (multi-session history)
@@ -242,12 +292,21 @@ Cmd+K opens fuzzy-search palette with navigation entries for all pages.
 
 ```
 Microsoft Graph ──sync──→ calendar_events ──analyze──→ ai_analysis (prep_notes, commitments)
-                ──sync──→ emails ──extract──→ ai_extraction (commitments, needs_reply)
+                ──sync──→ emails ──extract──→ ai_extraction (commitments, needs_reply, resolved_commitment_ids)
+                                            → auto-complete matching commitments (sent & received)
+                                            → dedup check before creating new commitments
 
 Transcript Upload ──process──→ summary, themes, quotes, commitments
+                              → auto-resolve pending commitments discussed in session
+                              → dedup check before creating new commitments
                               → commitment_activity log
                               → org updated_at refresh
                               → engagement session count update
+                              → session comparison vs prior 3 sessions
+
+Assessment Upload ──extract──→ PDF text extraction via pdf-parse
+                             → Supabase Storage (assessments bucket)
+                             → AI analysis (strengths, development areas, coaching implications)
 
 Cron Jobs:
   morning-briefing → email + store in briefings table
@@ -274,6 +333,10 @@ Required env vars (set in Supabase/Vercel):
 - **Next.js 16**: May have breaking changes from training data. Check `node_modules/next/dist/docs/` for current API docs.
 - **No charting library**: All charts (sparklines, bar charts, donut charts, line charts) are hand-rolled SVG in components.
 - **Toast notifications**: Use `toast.success()` / `toast.error()` from `sonner`.
+- **pdf-parse v1**: Must use `require('pdf-parse')` inside a function (not top-level import) to avoid build-time test file loading error.
+- **relationship_type is an array**: `contacts.relationship_type` is `text[]` not `text`. Use array operations (`.includes()`, spread, etc.) not string comparisons.
+- **is_own_business**: Always filter LeadShift out of client lists in AI prompts. Use `orgs.filter(o => !o.is_own_business)` for client-facing contexts.
+- **Commitment quality**: AI prompts enforce strict criteria — only specific, concrete action items. Do NOT create commitments for meeting attendance, vague intentions, recurring routines (sleep, deep work, exercise), or FYI items.
 
 ### Build & Run
 ```bash

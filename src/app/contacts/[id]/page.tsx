@@ -90,7 +90,7 @@ export default function ContactDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editFields, setEditFields] = useState<Record<string, string>>({});
+  const [editFields, setEditFields] = useState<Record<string, string | string[]>>({});
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [showAddAssessment, setShowAddAssessment] = useState(false);
@@ -195,7 +195,7 @@ export default function ContactDetailPage() {
       company: contact.company || '',
       org_id: contact.org_id || '',
       category: contact.category || 'business',
-      relationship_type: contact.relationship_type || '',
+      relationship_type: contact.relationship_type || [],
       notes: contact.notes || '',
       personality_notes: contact.personality_notes || '',
       coaching_focus: contact.coaching_focus || '',
@@ -373,14 +373,30 @@ export default function ContactDetailPage() {
                 </div>
                 <div>
                   <label className="text-xs text-muted block mb-1">Relationship</label>
-                  <select value={editFields.relationship_type}
-                    onChange={(e) => setEditFields({ ...editFields, relationship_type: e.target.value })}
-                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary">
-                    <option value="">None</option>
-                    {RELATIONSHIP_TYPES.map((rt) => (
-                      <option key={rt} value={rt}>{rt.replace(/_/g, ' ')}</option>
-                    ))}
-                  </select>
+                  <div className="w-full bg-background border border-border rounded-lg px-3 py-2">
+                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                      {(Array.isArray(editFields.relationship_type) ? editFields.relationship_type : []).map((rt: string) => (
+                        <button key={rt} type="button"
+                          onClick={() => setEditFields({ ...editFields, relationship_type: (editFields.relationship_type as string[]).filter((t: string) => t !== rt) })}
+                          className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary hover:bg-primary/25 transition-colors flex items-center gap-1">
+                          {rt.replace(/_/g, ' ')} <X className="w-3 h-3" />
+                        </button>
+                      ))}
+                    </div>
+                    <select value=""
+                      onChange={(e) => {
+                        const current = Array.isArray(editFields.relationship_type) ? editFields.relationship_type : [];
+                        if (e.target.value && !current.includes(e.target.value)) {
+                          setEditFields({ ...editFields, relationship_type: [...current, e.target.value] });
+                        }
+                      }}
+                      className="bg-transparent text-sm focus:outline-none w-full">
+                      <option value="">{(Array.isArray(editFields.relationship_type) && editFields.relationship_type.length) ? 'Add another...' : 'Select type'}</option>
+                      {RELATIONSHIP_TYPES.filter((rt) => !(Array.isArray(editFields.relationship_type) ? editFields.relationship_type : []).includes(rt)).map((rt) => (
+                        <option key={rt} value={rt}>{rt.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs text-muted block mb-1">Email</label>
@@ -453,7 +469,7 @@ export default function ContactDetailPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 pt-1">
-                <button onClick={saveEdits} disabled={saving || !editFields.name?.trim()}
+                <button onClick={saveEdits} disabled={saving || !(typeof editFields.name === 'string' && editFields.name.trim())}
                   className="flex items-center gap-1 px-3 py-1.5 btn-gradient text-white rounded-md text-xs font-medium disabled:opacity-50">
                   {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save
                 </button>
@@ -483,11 +499,11 @@ export default function ContactDetailPage() {
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {contact.title && <span className="text-sm text-muted">{contact.title}</span>}
-                    {contact.relationship_type && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary">
-                        {contact.relationship_type.replace(/_/g, ' ')}
+                    {contact.relationship_type && contact.relationship_type.length > 0 && contact.relationship_type.map((rt) => (
+                      <span key={rt} className="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary">
+                        {rt.replace(/_/g, ' ')}
                       </span>
-                    )}
+                    ))}
                     {contact.category && contact.category !== 'business' && (
                       <span className={cn(
                         'text-xs px-2 py-0.5 rounded-full',

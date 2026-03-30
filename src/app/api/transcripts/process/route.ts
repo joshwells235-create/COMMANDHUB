@@ -49,10 +49,23 @@ export async function POST(request: NextRequest) {
     // 2. Determine if this is a personal or business transcript
     const isPersonal = transcript.category === 'personal' || (!transcript.org_id && !transcript.engagement_id);
 
-    // 3. Fetch contacts for context (business transcripts only)
-    const { data: contacts } = transcript.org_id
-      ? await supabase.from('contacts').select('name, role').eq('org_id', transcript.org_id)
-      : { data: null };
+    // 3. Fetch contacts and pending commitments for context
+    const [contactsRes, pendingCommitmentsRes] = await Promise.all([
+      transcript.org_id
+        ? supabase.from('contacts').select('name, role').eq('org_id', transcript.org_id)
+        : Promise.resolve({ data: null }),
+      transcript.org_id
+        ? supabase
+            .from('commitments')
+            .select('id, title, description, commitment_type, owner, other_party, status')
+            .eq('org_id', transcript.org_id)
+            .in('status', ['pending', 'in_progress', 'waiting'])
+            .order('created_at', { ascending: false })
+            .limit(30)
+        : Promise.resolve({ data: null }),
+    ]);
+    const contacts = contactsRes.data;
+    const pendingCommitments = pendingCommitmentsRes.data || [];
 
     const orgName = (transcript.organizations as { name: string } | null)?.name || 'Unknown';
     const engagement = transcript.engagements as { name: string; type: string | null } | null;
@@ -116,6 +129,26 @@ When extracting commitments, pay close attention to WHO is taking the action:
 - Do NOT create commitments for attending meetings, showing up to calls, or joining sessions. The calendar handles that. Only extract commitments for actual ACTION ITEMS — things to prepare, send, review, create, or follow up on.
 - Do NOT create commitments for recurring personal routines (sleep, deep work blocks, exercise, meals, travel logistics). These are calendar context, not actionable tasks.
 
+COMMITMENT QUALITY BAR — BE SELECTIVE:
+Only create a commitment if ALL of these are true:
+1. Someone made a SPECIFIC, CONCRETE promise or request (not vague intentions like "I should probably..." or "it would be good to...")
+2. There is a clear person responsible (Josh or a named other party)
+3. It requires actual effort — not just thinking, considering, or keeping something in mind
+4. It would genuinely fall through the cracks if not tracked
+
+Do NOT create commitments for:
+- Vague intentions ("I need to be better at delegating") — these are growth areas, not action items
+- Generic coaching homework ("practice active listening") — too vague to track
+- Things Josh will naturally do as part of his normal workflow
+- Recurring/ongoing practices ("continue journaling") — not a one-time trackable item
+
+Aim for 0-4 concrete commitments per session, not 6+. Fewer high-quality items are far better than many vague ones.
+${pendingCommitments.length > 0 ? `
+EXISTING PENDING COMMITMENTS FOR THIS CLIENT (check if any were discussed, completed, or addressed in this session):
+${pendingCommitments.map((c: { id: string; title: string; commitment_type: string; owner: string; other_party?: string }) => `- [ID:${c.id}] "${c.title}" (${c.commitment_type}, owner: ${c.owner}${c.other_party ? `, with: ${c.other_party}` : ''})`).join('\n')}
+
+If the transcript shows that any of these existing commitments were completed, delivered, or no longer needed, include their IDs in resolved_commitment_ids. Only mark as resolved if there is clear evidence in the transcript.` : ''}
+
 Analyze and return JSON only (no markdown code blocks):
 {
   "summary": "3-5 sentence executive summary of the session. What was discussed, what shifted, what matters for next time.",
@@ -152,6 +185,7 @@ Analyze and return JSON only (no markdown code blocks):
     "frameworks_used": ["framework names used in session"],
     "recommended_focus_next_session": "What to explore next time"
   },
+  "resolved_commitment_ids": ["commitment-uuid-1"],
   "session_arc": "Where did the session start emotionally/thematically and where did it land? What was the turning point if any?",
   "notable_quotes": [
     {
@@ -187,6 +221,9 @@ When extracting commitments, pay close attention to WHO is taking the action:
 - Do NOT assign owner="josh" when someone else is the one who needs to act.
 - Do NOT create commitments for attending meetings, showing up to appointments, or joining calls. Only extract actual action items.
 - Do NOT create commitments for recurring personal routines (sleep, deep work blocks, exercise, meals, travel logistics). These are calendar context, not actionable tasks.
+
+COMMITMENT QUALITY BAR — BE SELECTIVE:
+Only create a commitment if someone made a SPECIFIC, CONCRETE promise or request that would genuinely fall through the cracks if not tracked. Skip vague intentions, generic reminders, and things that will naturally happen. Aim for 0-3 commitments per conversation.
 
 Analyze and return JSON only (no markdown code blocks):
 {
@@ -410,56 +447,115 @@ Compare the current session against the prior sessions. Return JSON only (no mar
       }
     }
 
-    // 9. Create commitments from the extraction + log activity
+    // 8b. Auto-resolve commitments that were addressed in this session
+    if (extraction.resolved_commitment_ids?.length > 0) {
+      for (const commitmentId of extraction.resolved_commitment_ids) {
+        const { data: existing } = await supabase
+          .from('commitments')
+          .select('id, status')
+          .eq('id', commitmentId)
+          .in('status', ['pending', 'in_progress', 'waiting'])
+          .single();
+
+        if (existing) {
+          await supabase
+            .from('commitments')
+            .update({
+              status: 'completed',
+              completed_at: new Date().toISOString(),
+            })
+            .eq('id', commitmentId);
+
+          await supabase.from('commitment_activity').insert({
+            commitment_id: commitmentId,
+            action: 'completed',
+            details: {
+              source: 'transcript_auto_resolve',
+              transcript_id,
+              transcript_title: transcript.title,
+              description: `Auto-completed: discussed/resolved in session "${transcript.title}" on ${transcriptDate}`,
+            },
+          });
+        }
+      }
+    }
+
+    // 9. Create commitments from the extraction + log activity (with deduplication)
     if (extraction.commitments && extraction.commitments.length > 0) {
-      const commitmentRecords = extraction.commitments.map(
-        (c: {
-          title: string;
-          description?: string;
-          commitment_type: string;
-          owner?: string;
-          other_party?: string;
-          suggested_due?: string | null;
-          source_quote?: string;
-        }) => ({
-          title: c.title,
-          description: c.description || null,
-          commitment_type: c.commitment_type,
-          category: isPersonal ? 'personal' : 'business',
-          org_id: transcript.org_id,
-          engagement_id: transcript.engagement_id,
-          owner: c.owner || 'josh',
-          other_party: c.other_party || null,
-          due_date: c.suggested_due || null,
-          source_type: 'transcript',
-          source_ref: transcript_id,
-          source_snippet: c.source_quote || null,
-          status: 'pending',
-        })
+      // Fetch existing active commitments for dedup check
+      const { data: existingCommitments } = transcript.org_id
+        ? await supabase
+            .from('commitments')
+            .select('id, title')
+            .eq('org_id', transcript.org_id)
+            .in('status', ['pending', 'in_progress', 'waiting'])
+        : await supabase
+            .from('commitments')
+            .select('id, title')
+            .is('org_id', null)
+            .in('status', ['pending', 'in_progress', 'waiting']);
+
+      const existingTitles = (existingCommitments || []).map((c) => c.title.toLowerCase().trim());
+
+      const dedupedCommitments = extraction.commitments.filter(
+        (c: { title: string }) => {
+          const newTitle = c.title.toLowerCase().trim();
+          return !existingTitles.some(
+            (existing) => existing === newTitle || existing.includes(newTitle) || newTitle.includes(existing)
+          );
+        }
       );
 
-      const { data: createdCommitments, error: commitError } = await supabase
-        .from('commitments')
-        .insert(commitmentRecords)
-        .select('id, title');
-
-      if (commitError) {
-        console.error('Error creating commitments:', commitError);
-      }
-
-      // Log activity for each commitment created from transcript
-      if (createdCommitments && createdCommitments.length > 0) {
-        const activityRecords = createdCommitments.map((c) => ({
-          commitment_id: c.id,
-          action: 'created',
-          details: {
+      if (dedupedCommitments.length > 0) {
+        const commitmentRecords = dedupedCommitments.map(
+          (c: {
+            title: string;
+            description?: string;
+            commitment_type: string;
+            owner?: string;
+            other_party?: string;
+            suggested_due?: string | null;
+            source_quote?: string;
+          }) => ({
             title: c.title,
-            source: 'transcript',
-            transcript_id,
-            transcript_title: transcript.title,
-          },
-        }));
-        await supabase.from('commitment_activity').insert(activityRecords);
+            description: c.description || null,
+            commitment_type: c.commitment_type,
+            category: isPersonal ? 'personal' : 'business',
+            org_id: transcript.org_id,
+            engagement_id: transcript.engagement_id,
+            owner: c.owner || 'josh',
+            other_party: c.other_party || null,
+            due_date: c.suggested_due || null,
+            source_type: 'transcript',
+            source_ref: transcript_id,
+            source_snippet: c.source_quote || null,
+            status: 'pending',
+          })
+        );
+
+        const { data: createdCommitments, error: commitError } = await supabase
+          .from('commitments')
+          .insert(commitmentRecords)
+          .select('id, title');
+
+        if (commitError) {
+          console.error('Error creating commitments:', commitError);
+        }
+
+        // Log activity for each commitment created from transcript
+        if (createdCommitments && createdCommitments.length > 0) {
+          const activityRecords = createdCommitments.map((c) => ({
+            commitment_id: c.id,
+            action: 'created',
+            details: {
+              title: c.title,
+              source: 'transcript',
+              transcript_id,
+              transcript_title: transcript.title,
+            },
+          }));
+          await supabase.from('commitment_activity').insert(activityRecords);
+        }
       }
     }
 

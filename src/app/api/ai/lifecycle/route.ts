@@ -445,7 +445,7 @@ export async function POST(request: NextRequest) {
       .join('\n') || 'No engagements';
 
     const contactSummary = contacts
-      .map((c) => `- ${c.name}${c.role ? ' (' + c.role + ')' : ''}${c.relationship_type ? ' - ' + c.relationship_type : ''}`)
+      .map((c) => `- ${c.name}${c.role ? ' (' + c.role + ')' : ''}${c.relationship_type && c.relationship_type.length > 0 ? ' - ' + (Array.isArray(c.relationship_type) ? c.relationship_type.join(', ') : c.relationship_type) : ''}`)
       .join('\n') || 'No contacts';
 
     const stageLabels: Record<LifecycleStage, string> = {
