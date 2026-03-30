@@ -159,6 +159,37 @@ Return JSON only:
       }
     }
 
+    // Update contact.last_interaction_date for attendees of recent events
+    if (analyzed > 0 && unprocessed) {
+      const attendeeEmails = new Set<string>();
+      for (const event of unprocessed) {
+        if (event.attendees) {
+          for (const a of event.attendees as Array<{ emailAddress?: { address?: string } }>) {
+            const email = a.emailAddress?.address?.toLowerCase();
+            if (email) attendeeEmails.add(email);
+          }
+        }
+      }
+      if (attendeeEmails.size > 0) {
+        const { data: matchedContacts } = await supabase
+          .from('contacts')
+          .select('id, email, last_interaction_date')
+          .not('email', 'is', null);
+
+        const now = new Date().toISOString();
+        for (const contact of matchedContacts || []) {
+          if (contact.email && attendeeEmails.has(contact.email.toLowerCase())) {
+            if (!contact.last_interaction_date || contact.last_interaction_date < now) {
+              await supabase
+                .from('contacts')
+                .update({ last_interaction_date: now })
+                .eq('id', contact.id);
+            }
+          }
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Calendar synced and analyzed',

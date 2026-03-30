@@ -66,6 +66,32 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Update contact.last_interaction_date for processed emails
+    if (extractionCount > 0 && unprocessedEmails) {
+      const emailAddresses = new Set<string>();
+      for (const email of unprocessedEmails.slice(0, extractionCount)) {
+        if (email.sender_email) emailAddresses.add(email.sender_email.toLowerCase());
+      }
+      if (emailAddresses.size > 0) {
+        const { data: matchedContacts } = await supabase
+          .from('contacts')
+          .select('id, email, last_interaction_date')
+          .not('email', 'is', null);
+
+        for (const contact of matchedContacts || []) {
+          if (contact.email && emailAddresses.has(contact.email.toLowerCase())) {
+            const now = new Date().toISOString();
+            if (!contact.last_interaction_date || contact.last_interaction_date < now) {
+              await supabase
+                .from('contacts')
+                .update({ last_interaction_date: now })
+                .eq('id', contact.id);
+            }
+          }
+        }
+      }
+    }
+
     // Count remaining unprocessed
     const { count: remaining } = await supabase
       .from('emails')

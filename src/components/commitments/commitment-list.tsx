@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Check, Clock, X, AlertTriangle, Pencil, Save, Loader2, CheckCircle2, Target, GripVertical, FileText, Mail, Calendar } from 'lucide-react';
-import type { Commitment, CommitmentType } from '@/types/database';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Check, Clock, X, AlertTriangle, Pencil, Save, Loader2, CheckCircle2, Target, GripVertical, FileText, Mail, Calendar, History } from 'lucide-react';
+import type { Commitment, CommitmentType, CommitmentActivity } from '@/types/database';
 import { getDueLabel, getCommitmentTypeLabel, getEscalationIndicator, cn } from '@/lib/utils';
 import { SnoozePicker } from '@/components/ui/snooze-picker';
 import { formatDistanceToNow, differenceInDays } from 'date-fns';
@@ -126,6 +126,129 @@ function buildPriorityTitle(c: Commitment): string {
   return `Priority: ${c.priority_score}\n${factors.join('\n')}`;
 }
 
+const ACTION_LABELS: Record<string, string> = {
+  created: 'Created',
+  completed: 'Completed',
+  snoozed: 'Snoozed',
+  unsnoozed: 'Unsnoozed',
+  escalated: 'Escalated',
+  'auto-resolved': 'Auto-resolved',
+  updated: 'Updated',
+  cancelled: 'Cancelled',
+  reopened: 'Reopened',
+  priority_changed: 'Priority changed',
+};
+
+const ACTION_COLORS: Record<string, string> = {
+  created: 'bg-primary/60',
+  completed: 'bg-success/60',
+  snoozed: 'bg-warning/60',
+  unsnoozed: 'bg-warning/60',
+  escalated: 'bg-danger/60',
+  'auto-resolved': 'bg-success/60',
+  cancelled: 'bg-danger/60',
+  updated: 'bg-indigo-400/60',
+  reopened: 'bg-primary/60',
+  priority_changed: 'bg-indigo-400/60',
+};
+
+function formatDetails(details: Record<string, unknown> | null): string | null {
+  if (!details) return null;
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(details)) {
+    if (value !== null && value !== undefined && value !== '') {
+      const label = key.replace(/_/g, ' ');
+      parts.push(`${label}: ${typeof value === 'string' ? value.split('T')[0] : String(value)}`);
+    }
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function ActivityHistory({ commitmentId, activityCache }: { commitmentId: string; activityCache: React.RefObject<Map<string, CommitmentActivity[]>> }) {
+  const [activities, setActivities] = useState<CommitmentActivity[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const fetchActivities = useCallback(async () => {
+    // Check cache first
+    const cached = activityCache.current?.get(commitmentId);
+    if (cached) {
+      setActivities(cached);
+      return;
+    }
+
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await fetch(`/api/activity?commitment_id=${commitmentId}&limit=20`);
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data: CommitmentActivity[] = await res.json();
+      activityCache.current?.set(commitmentId, data);
+      setActivities(data);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [commitmentId, activityCache]);
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchActivities();
+  }, [fetchActivities]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-2 text-xs text-muted">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Loading history...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-xs text-danger/70 py-2">Failed to load activity history.</div>
+    );
+  }
+
+  if (!activities || activities.length === 0) {
+    return (
+      <div className="text-xs text-muted/60 py-2">No activity recorded.</div>
+    );
+  }
+
+  return (
+    <div className="space-y-0">
+      {activities.map((a) => {
+        const dotColor = ACTION_COLORS[a.action] || 'bg-muted/40';
+        const details = formatDetails(a.details);
+        return (
+          <div key={a.id} className="flex items-start gap-2 pl-1">
+            <div className="flex flex-col items-center flex-shrink-0">
+              <div className={cn('w-1.5 h-1.5 rounded-full mt-1.5', dotColor)} />
+              <div className="w-px flex-1 bg-border/50" />
+            </div>
+            <div className="pb-2.5 min-w-0">
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs font-medium text-foreground/80">
+                  {ACTION_LABELS[a.action] || a.action}
+                </span>
+                <span className="text-[10px] text-muted/60">
+                  {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+                </span>
+              </div>
+              {details && (
+                <p className="text-[10px] text-muted/50 mt-0.5 truncate">{details}</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CommitmentList({
   commitments,
   title,
@@ -143,6 +266,8 @@ export function CommitmentList({
   const [editFields, setEditFields] = useState<Record<string, string | null>>({});
   const [saving, setSaving] = useState(false);
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
+  const activityCacheRef = useRef<Map<string, CommitmentActivity[]>>(new Map());
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -282,6 +407,19 @@ export function CommitmentList({
                     >
                       {c.priority_score}
                     </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setHistoryId(historyId === c.id ? null : c.id);
+                      }}
+                      className={cn(
+                        'p-1 rounded hover:bg-card-hover transition-colors',
+                        historyId === c.id ? 'text-primary' : 'text-muted/40 hover:text-muted'
+                      )}
+                      title="Activity history"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </button>
 
@@ -402,6 +540,18 @@ export function CommitmentList({
                       >
                         Cancel
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {historyId === c.id && (
+                  <div className="px-4 pb-3 border-t border-border/30">
+                    <div className="flex items-center gap-1.5 pt-2.5 pb-2">
+                      <History className="w-3 h-3 text-muted/60" />
+                      <span className="text-[10px] text-muted/60 uppercase tracking-wide font-medium">Activity History</span>
+                    </div>
+                    <div className="border-l-2 border-primary/20 pl-3 ml-0.5">
+                      <ActivityHistory commitmentId={c.id} activityCache={activityCacheRef} />
                     </div>
                   </div>
                 )}

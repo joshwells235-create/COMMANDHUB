@@ -29,6 +29,8 @@ import {
   Pencil,
   Save,
   Plus,
+  Activity,
+  Heart,
 } from 'lucide-react';
 import { useClientDetail } from '@/lib/hooks/use-client-detail';
 import type { Transcript, TranscriptTheme, LanguageLeak } from '@/lib/hooks/use-client-detail';
@@ -78,6 +80,46 @@ export default function ClientDetailPage() {
       .then((data) => setOrgCalendarEvents(Array.isArray(data) ? data : data.events || []))
       .catch(() => setOrgCalendarEvents([]));
   }, [orgId]);
+
+  // Health score data
+  const [healthData, setHealthData] = useState<{
+    score: number;
+    status: 'thriving' | 'healthy' | 'cooling' | 'at_risk';
+    days_since_contact: number;
+    overdue_count: number;
+    completion_rate: number;
+    trend: 'improving' | 'stable' | 'declining';
+    alert: string | null;
+  } | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [healthError, setHealthError] = useState(false);
+
+  useEffect(() => {
+    if (!orgId) return;
+    setHealthLoading(true);
+    setHealthError(false);
+    fetch('/api/ai/relationship-health')
+      .then((res) => (res.ok ? res.json() : Promise.reject('Failed')))
+      .then((data: Array<{ org_id: string; score: number; status: string; days_since_contact: number; overdue_count: number; completion_rate: number; trend: string; alert: string | null }>) => {
+        const match = Array.isArray(data) ? data.find((d) => d.org_id === orgId) : null;
+        if (match) {
+          setHealthData(match as typeof healthData);
+        } else {
+          setHealthData(null);
+        }
+      })
+      .catch(() => setHealthError(true))
+      .finally(() => setHealthLoading(false));
+  }, [orgId]);
+
+  // Derive next meeting from calendar events
+  const nextMeeting = useMemo(() => {
+    const now = new Date();
+    const future = orgCalendarEvents
+      .filter((ev) => new Date(ev.start_time) > now)
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+    return future.length > 0 ? future[0] : null;
+  }, [orgCalendarEvents]);
 
   // Build unified timeline items
   const unifiedTimelineItems = useMemo<TimelineItem[]>(() => {
@@ -705,6 +747,150 @@ export default function ClientDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Client Health Score */}
+        {healthLoading ? (
+          <div className="premium-card p-4">
+            <div className="flex items-center gap-3 animate-pulse">
+              <div className="w-14 h-14 rounded-xl bg-card-hover" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-32 bg-card-hover rounded" />
+                <div className="h-3 w-48 bg-card-hover rounded" />
+              </div>
+              <div className="flex gap-4">
+                <div className="h-8 w-16 bg-card-hover rounded" />
+                <div className="h-8 w-16 bg-card-hover rounded" />
+                <div className="h-8 w-16 bg-card-hover rounded" />
+              </div>
+            </div>
+          </div>
+        ) : healthError ? (
+          <div className="premium-card p-4">
+            <div className="flex items-center gap-2 text-muted">
+              <AlertTriangle className="w-4 h-4" />
+              <span className="text-sm">Health data unavailable</span>
+            </div>
+          </div>
+        ) : healthData ? (
+          <div className="premium-card p-4">
+            <div className="flex items-center gap-4">
+              {/* Score circle */}
+              <div
+                className={cn(
+                  'flex-shrink-0 w-14 h-14 rounded-xl flex flex-col items-center justify-center border',
+                  healthData.score >= 70
+                    ? 'bg-success/10 border-success/30'
+                    : healthData.score >= 40
+                      ? 'bg-warning/10 border-warning/30'
+                      : 'bg-danger/10 border-danger/30'
+                )}
+              >
+                <span
+                  className={cn(
+                    'text-xl font-bold leading-none',
+                    healthData.score >= 70
+                      ? 'text-success'
+                      : healthData.score >= 40
+                        ? 'text-warning'
+                        : 'text-danger'
+                  )}
+                >
+                  {healthData.score}
+                </span>
+                <span className="text-[10px] text-muted leading-none mt-0.5">health</span>
+              </div>
+
+              {/* Status + trend */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <Heart
+                    className={cn(
+                      'w-4 h-4',
+                      healthData.score >= 70
+                        ? 'text-success'
+                        : healthData.score >= 40
+                          ? 'text-warning'
+                          : 'text-danger'
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      'text-xs px-2 py-0.5 rounded-full font-medium',
+                      healthData.status === 'thriving'
+                        ? 'bg-success/20 text-success'
+                        : healthData.status === 'healthy'
+                          ? 'bg-success/15 text-success'
+                          : healthData.status === 'cooling'
+                            ? 'bg-warning/20 text-warning'
+                            : 'bg-danger/20 text-danger'
+                    )}
+                  >
+                    {healthData.status === 'at_risk'
+                      ? 'At Risk'
+                      : healthData.status.charAt(0).toUpperCase() + healthData.status.slice(1)}
+                  </span>
+                  {healthData.trend !== 'stable' && (
+                    <span
+                      className={cn(
+                        'text-[10px] px-1.5 py-0.5 rounded font-medium',
+                        healthData.trend === 'improving'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-danger/10 text-danger'
+                      )}
+                    >
+                      {healthData.trend === 'improving' ? 'Improving' : 'Declining'}
+                    </span>
+                  )}
+                </div>
+                {healthData.alert && (
+                  <p className="text-xs text-warning/80 truncate">{healthData.alert}</p>
+                )}
+              </div>
+
+              {/* Metric pills */}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-foreground">
+                    {healthData.days_since_contact === -1
+                      ? '--'
+                      : `${healthData.days_since_contact}d`}
+                  </p>
+                  <p className="text-[10px] text-muted leading-none">last contact</p>
+                </div>
+                <div className="w-px h-6 bg-border" />
+                <div className="text-center">
+                  <p
+                    className={cn(
+                      'text-sm font-semibold',
+                      healthData.overdue_count > 0 ? 'text-danger' : 'text-foreground'
+                    )}
+                  >
+                    {healthData.overdue_count}
+                  </p>
+                  <p className="text-[10px] text-muted leading-none">overdue</p>
+                </div>
+                <div className="w-px h-6 bg-border" />
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-foreground">
+                    {healthData.completion_rate}%
+                  </p>
+                  <p className="text-[10px] text-muted leading-none">complete</p>
+                </div>
+                {nextMeeting && (
+                  <>
+                    <div className="w-px h-6 bg-border" />
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-primary">
+                        {format(new Date(nextMeeting.start_time), 'MMM d')}
+                      </p>
+                      <p className="text-[10px] text-muted leading-none">next meeting</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {/* Active Commitments */}
         <section>

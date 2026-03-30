@@ -5,13 +5,32 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createServerClient();
     const limit = parseInt(request.nextUrl.searchParams.get('limit') || '15');
+    const commitmentId = request.nextUrl.searchParams.get('commitment_id');
 
     // Fetch recent commitment activity
-    const { data: activities } = await supabase
+    let activityQuery = supabase
       .from('commitment_activity')
       .select('id, commitment_id, action, details, created_at, commitment:commitments(title, org_id, organization:organizations(name))')
       .order('created_at', { ascending: false })
       .limit(limit);
+
+    if (commitmentId) {
+      activityQuery = activityQuery.eq('commitment_id', commitmentId);
+    }
+
+    const { data: activities } = await activityQuery;
+
+    // If filtering by commitment_id, return just the activity entries
+    if (commitmentId) {
+      const result = (activities || []).map((a) => ({
+        id: a.id,
+        commitment_id: a.commitment_id,
+        action: a.action,
+        details: a.details,
+        created_at: a.created_at,
+      }));
+      return NextResponse.json(result);
+    }
 
     // Fetch recent transcripts
     const { data: transcripts } = await supabase
