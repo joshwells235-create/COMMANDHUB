@@ -12,6 +12,7 @@ export async function GET() {
       .select('*, conversation_id, organization:organizations(id, name, strategic_value, status)')
       .eq('review_status', 'pending')
       .eq('is_processed', true)
+      .neq('folder', 'sent')
       .order('received_at', { ascending: false });
 
     if (error) {
