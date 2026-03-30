@@ -1599,9 +1599,21 @@ CRITICAL RULES:
     const claudeMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     const trimmedHistory = history.slice(-10);
     for (const msg of trimmedHistory) {
+      // Ensure alternating roles — skip if same role as previous
+      const lastRole = claudeMessages.length > 0 ? claudeMessages[claudeMessages.length - 1].role : null;
+      if (msg.role === lastRole) continue;
       claudeMessages.push({ role: msg.role, content: msg.content });
     }
+    // Ensure first message is 'user' (Anthropic requirement)
+    while (claudeMessages.length > 0 && claudeMessages[0].role !== 'user') {
+      claudeMessages.shift();
+    }
     claudeMessages.push({ role: 'user', content: message });
+
+    // Log context size for debugging
+    const systemLen = systemPrompt.length;
+    const msgLen = claudeMessages.reduce((s, m) => s + m.content.length, 0);
+    console.log(`Chat context: system=${systemLen} chars, messages=${msgLen} chars (${claudeMessages.length} msgs)`);
 
     const client = new Anthropic();
     const response = await client.messages.create({
@@ -1654,11 +1666,13 @@ CRITICAL RULES:
       response: structured.message,
     });
   } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    const errDetails = (error as { status?: number; error?: { message?: string } })?.error?.message || '';
-    console.error('Chat API error:', errMsg, errDetails);
+    const errObj = error as { status?: number; message?: string; error?: { type?: string; message?: string } };
+    const status = errObj.status || 500;
+    const errType = errObj.error?.type || 'unknown';
+    const errMsg = errObj.error?.message || errObj.message || String(error);
+    console.error(`Chat API error [${status}] [${errType}]:`, errMsg);
     return NextResponse.json(
-      { error: 'Chat request failed', details: errMsg.substring(0, 200) },
+      { error: 'Chat request failed', details: `${errType}: ${errMsg}`.substring(0, 300) },
       { status: 500 }
     );
   }
