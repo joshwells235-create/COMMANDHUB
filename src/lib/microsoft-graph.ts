@@ -324,7 +324,10 @@ export async function syncEmails() {
     const junk = isObviousJunk(email);
     if (junk) junkSkipped++;
 
-    await supabase
+    // Use ignoreDuplicates: true so already-processed emails don't get
+    // their is_processed/org_id/ai_extraction reset on every sync cycle.
+    // Only genuinely new emails will be inserted.
+    const { error: insertError } = await supabase
       .from('emails')
       .upsert(
         {
@@ -343,9 +346,9 @@ export async function syncEmails() {
           review_status: junk ? 'dismissed' : 'pending',
           ...(junk ? { ai_extraction: { is_noise: true, email_category: 'auto_filtered', email_summary: 'Auto-filtered as junk/automated' } } : {}),
         },
-        { onConflict: 'ms_message_id', ignoreDuplicates: false }
+        { onConflict: 'ms_message_id', ignoreDuplicates: true }
       );
-    totalSynced++;
+    if (!insertError) totalSynced++;
   }
 
   // Sync sent emails
@@ -364,7 +367,9 @@ export async function syncEmails() {
       })),
     ];
 
-    await supabase
+    // Use ignoreDuplicates: true so already-processed sent emails don't get
+    // their is_processed/org_id/ai_extraction reset on every sync cycle.
+    const { error: sentInsertError } = await supabase
       .from('emails')
       .upsert(
         {
@@ -383,9 +388,9 @@ export async function syncEmails() {
           is_processed: false,
           review_status: 'pending',
         },
-        { onConflict: 'ms_message_id', ignoreDuplicates: false }
+        { onConflict: 'ms_message_id', ignoreDuplicates: true }
       );
-    totalSynced++;
+    if (!sentInsertError) totalSynced++;
   }
 
   return totalSynced;
@@ -412,6 +417,11 @@ export async function syncCalendar() {
     const end = event.end as { dateTime?: string } | undefined;
     const location = event.location as { displayName?: string } | undefined;
 
+    // Use ignoreDuplicates: true so already-processed events don't get
+    // their is_processed/org_id/ai_analysis reset on every sync cycle.
+    // This was causing 100% of calendar events to have org_id = NULL because
+    // each sync reset is_processed to false, and the small batch size (3)
+    // couldn't keep up with re-processing.
     await supabase
       .from('calendar_events')
       .upsert(
@@ -426,7 +436,7 @@ export async function syncCalendar() {
           is_processed: false,
           raw_data: event,
         },
-        { onConflict: 'ms_event_id', ignoreDuplicates: false }
+        { onConflict: 'ms_event_id', ignoreDuplicates: true }
       );
   }
 }
