@@ -138,22 +138,30 @@ export async function getValidAccessToken(): Promise<string> {
 export async function fetchCalendarEvents(startDate: string, endDate: string) {
   const accessToken = await getValidAccessToken();
 
-  const url = `${GRAPH_BASE}/me/calendarView?startDateTime=${startDate}&endDateTime=${endDate}`;
+  let allEvents: Record<string, unknown>[] = [];
+  let nextUrl: string | null = `${GRAPH_BASE}/me/calendarView?startDateTime=${startDate}&endDateTime=${endDate}&$top=100&$orderby=start/dateTime`;
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-  });
+  while (nextUrl) {
+    const fetchUrl = nextUrl;
+    const resp: Response = await fetch(fetchUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'outlook.timezone="Eastern Standard Time"',
+      },
+    });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(`Failed to fetch calendar events: ${errorData.error?.message || response.statusText}`);
+    if (!resp.ok) {
+      const errorData = await resp.json();
+      throw new Error(`Failed to fetch calendar events: ${errorData.error?.message || resp.statusText}`);
+    }
+
+    const body = await resp.json() as { value?: Record<string, unknown>[]; '@odata.nextLink'?: string };
+    allEvents = allEvents.concat(body.value || []);
+    nextUrl = body['@odata.nextLink'] || null;
   }
 
-  const data = await response.json();
-  return data.value;
+  return allEvents;
 }
 
 export async function fetchEmails(sinceDate: string, top: number = 50) {
@@ -250,16 +258,20 @@ export async function syncCalendar() {
   const supabase = createServerClient();
 
   for (const event of events) {
+    const start = event.start as { dateTime?: string } | undefined;
+    const end = event.end as { dateTime?: string } | undefined;
+    const location = event.location as { displayName?: string } | undefined;
+
     await supabase
       .from('calendar_events')
       .upsert(
         {
-          ms_event_id: event.id,
-          subject: event.subject ?? null,
-          body_preview: event.bodyPreview ?? null,
-          start_time: event.start?.dateTime,
-          end_time: event.end?.dateTime,
-          location: event.location?.displayName ?? null,
+          ms_event_id: event.id as string,
+          subject: (event.subject as string) ?? null,
+          body_preview: (event.bodyPreview as string) ?? null,
+          start_time: start?.dateTime,
+          end_time: end?.dateTime,
+          location: location?.displayName ?? null,
           attendees: event.attendees ?? null,
           is_processed: false,
           raw_data: event,

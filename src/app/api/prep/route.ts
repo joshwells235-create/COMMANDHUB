@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const supabase = createServerClient();
 
     // Fetch everything in parallel for speed
-    const [orgRes, transcriptRes, commitmentsRes, contactsRes, sessionComparisonRes] =
+    const [orgRes, transcriptRes, commitmentsRes, contactsRes, sessionComparisonRes, emailsRes] =
       await Promise.all([
         supabase
           .from('organizations')
@@ -55,6 +55,13 @@ export async function GET(request: NextRequest) {
           .not('ai_extraction', 'is', null)
           .order('transcript_date', { ascending: false })
           .limit(1),
+        supabase
+          .from('emails')
+          .select('subject, sender, sender_email, body_preview, received_at, ai_extraction')
+          .eq('org_id', orgId)
+          .eq('is_processed', true)
+          .order('received_at', { ascending: false })
+          .limit(10),
       ]);
 
     const org = orgRes.data;
@@ -72,6 +79,30 @@ export async function GET(request: NextRequest) {
       | Record<string, unknown>
       | null;
     const sessionComparison = aiExtraction?.session_comparison || null;
+
+    // Build email intelligence context
+    const recentEmails = emailsRes.data || [];
+    const emailIntelligence = recentEmails
+      .filter((e) => {
+        const extraction = e.ai_extraction as Record<string, unknown> | null;
+        return extraction && !extraction.is_noise;
+      })
+      .map((e) => {
+        const extraction = e.ai_extraction as Record<string, unknown>;
+        const prepValue = extraction.prep_value as Record<string, unknown> | null;
+        const clientIntel = extraction.client_intelligence as Record<string, unknown> | null;
+        const parts = [`From: ${e.sender} — "${e.subject}" (${e.received_at})`];
+        if (extraction.email_summary) parts.push(`Summary: ${extraction.email_summary}`);
+        if (extraction.sentiment && extraction.sentiment !== 'neutral') parts.push(`Sentiment: ${extraction.sentiment}`);
+        if (clientIntel?.key_topics) parts.push(`Topics: ${(clientIntel.key_topics as string[]).join(', ')}`);
+        if (clientIntel?.wins) parts.push(`Wins: ${(clientIntel.wins as string[]).join(', ')}`);
+        if (clientIntel?.concerns) parts.push(`Concerns: ${(clientIntel.concerns as string[]).join(', ')}`);
+        if (prepValue?.callback_opportunities) parts.push(`Callbacks: ${(prepValue.callback_opportunities as string[]).join('; ')}`);
+        if (prepValue?.topics_on_their_mind) parts.push(`On their mind: ${(prepValue.topics_on_their_mind as string[]).join(', ')}`);
+        if (prepValue?.context_for_next_meeting) parts.push(`Context: ${prepValue.context_for_next_meeting}`);
+        return parts.join('\n  ');
+      })
+      .join('\n\n');
 
     const contactsList = contacts
       .map((c) => `${c.name}${c.role ? ` (${c.role})` : ''}`)
@@ -133,6 +164,9 @@ ${sessionHistoryParts.length > 0 ? `SESSION HISTORY (most recent first):\n${sess
 
 ${sessionComparison ? `Session-over-session comparison: ${JSON.stringify(sessionComparison)}` : ''}
 
+${emailIntelligence ? `RECENT EMAIL INTELLIGENCE (use for callbacks, context, and prep):
+${emailIntelligence}` : ''}
+
 Open commitments:
 ${commitmentsList}
 
@@ -145,7 +179,8 @@ Return ONLY valid JSON (no markdown, no code blocks):
   "provocative_question": "one powerful question to ask today, informed by their language leaks and resistance patterns",
   "watch_for": "behavioral cue or pattern to notice today based on historical patterns",
   "relationship_context": "key contacts and their dynamics in one sentence",
-  "thread_to_pull": "one theme or breakthrough from recent sessions that deserves deeper exploration today"
+  "thread_to_pull": "one theme or breakthrough from recent sessions that deserves deeper exploration today",
+  "email_callbacks": ["specific things from recent emails Josh can reference to show attentiveness, e.g. 'You mentioned X in your email last week...'"]
 }`;
 
     const client = new Anthropic();

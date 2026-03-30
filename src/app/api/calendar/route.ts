@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     const { data: events, error } = await supabase
       .from('calendar_events')
-      .select('*, organization:organizations(*)')
+      .select('*')
       .gte('start_time', dayStart)
       .lte('start_time', dayEnd)
       .order('start_time', { ascending: true });
