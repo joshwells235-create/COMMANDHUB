@@ -17,7 +17,7 @@ export async function GET(
 
     const { data, error } = await supabase
       .from('contacts')
-      .select('*, organizations(id, name, status, strategic_value, industry)')
+      .select('*, organizations!left(id, name, status, strategic_value, industry)')
       .eq('id', id)
       .single();
 
@@ -58,7 +58,7 @@ export async function PATCH(
       .from('contacts')
       .update(updates)
       .eq('id', id)
-      .select('*, organizations(id, name)')
+      .select('*, organizations!left(id, name)')
       .single();
 
     if (error) {

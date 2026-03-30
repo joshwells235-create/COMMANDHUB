@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('contacts')
-      .select('*, organizations(id, name)')
+      .select('*, organizations!left(id, name)')
       .order('name', { ascending: true });
 
     if (orgId) {
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('contacts')
       .insert(record)
-      .select('*, organizations(id, name)')
+      .select('*, organizations!left(id, name)')
       .single();
 
     if (error) {
