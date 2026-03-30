@@ -16,6 +16,8 @@ import {
   HelpCircle,
   ListChecks,
   Clock,
+  Mail,
+  Sparkles,
 } from 'lucide-react';
 
 interface PrepData {
@@ -32,6 +34,8 @@ interface PrepData {
     provocative_question: string;
     watch_for: string;
     relationship_context: string;
+    thread_to_pull?: string;
+    email_callbacks?: string[];
   };
 }
 
@@ -241,6 +245,40 @@ export default function PrepModePage() {
           </div>
           <p className="text-sm text-foreground-secondary leading-relaxed">{prep.watch_for}</p>
         </div>
+
+        {/* Thread to Pull */}
+        {prep.thread_to_pull && (
+          <div className="premium-card p-4 mb-4 border-l-4 border-primary/50">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Thread to Pull
+              </h2>
+            </div>
+            <p className="text-sm leading-relaxed">{prep.thread_to_pull}</p>
+          </div>
+        )}
+
+        {/* Email Callbacks */}
+        {prep.email_callbacks && prep.email_callbacks.length > 0 && (
+          <div className="premium-card p-4 mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Mail className="w-4 h-4 text-blue-400" />
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                Email Callbacks
+              </h2>
+            </div>
+            <p className="text-[10px] text-muted/60 mb-2">Reference these to show you&apos;re paying attention</p>
+            <ul className="space-y-2">
+              {prep.email_callbacks.map((callback, i) => (
+                <li key={i} className="text-sm flex items-start gap-2">
+                  <span className="text-blue-400 mt-0.5 flex-shrink-0">&bull;</span>
+                  <span className="leading-relaxed">{callback}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Contacts */}
         {contacts.length > 0 && (
