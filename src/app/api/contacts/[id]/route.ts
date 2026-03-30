@@ -17,7 +17,7 @@ export async function GET(
 
     const { data, error } = await supabase
       .from('contacts')
-      .select('*, organizations!left(id, name, status, strategic_value, industry)')
+      .select('*')
       .eq('id', id)
       .single();
 
@@ -26,6 +26,18 @@ export async function GET(
         return NextResponse.json({ error: 'Contact not found' }, { status: 404 });
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Attach org if present
+    if (data.org_id) {
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('id, name, status, strategic_value, industry')
+        .eq('id', data.org_id)
+        .single();
+      data.organizations = org || null;
+    } else {
+      data.organizations = null;
     }
 
     return NextResponse.json(data);
@@ -58,7 +70,7 @@ export async function PATCH(
       .from('contacts')
       .update(updates)
       .eq('id', id)
-      .select('*, organizations!left(id, name)')
+      .select('*')
       .single();
 
     if (error) {

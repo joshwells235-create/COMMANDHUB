@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('contacts')
-      .select('*, organizations!left(id, name)')
+      .select('*')
       .order('name', { ascending: true });
 
     if (orgId) {
@@ -28,18 +28,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Client-side search filter (name, role, title, company, email)
-    let results = data || [];
+    // Attach org names
+    let results: Record<string, unknown>[] = data || [];
+    const orgIds = [...new Set(results.map((c) => c.org_id).filter(Boolean))];
+    if (orgIds.length > 0) {
+      const { data: orgs } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .in('id', orgIds);
+      const orgMap = new Map((orgs || []).map((o: { id: string; name: string }) => [o.id, o]));
+      results = results.map((c) => ({
+        ...c,
+        organizations: c.org_id ? orgMap.get(c.org_id as string) || null : null,
+      }));
+    }
     if (search) {
       const q = search.toLowerCase();
-      results = results.filter(
-        (c) =>
-          c.name?.toLowerCase().includes(q) ||
-          c.role?.toLowerCase().includes(q) ||
-          c.title?.toLowerCase().includes(q) ||
-          c.company?.toLowerCase().includes(q) ||
-          c.email?.toLowerCase().includes(q)
-      );
+      results = results.filter((c) => {
+        const s = (v: unknown) => typeof v === 'string' ? v.toLowerCase() : '';
+        return s(c.name).includes(q) || s(c.role).includes(q) || s(c.title).includes(q) || s(c.company).includes(q) || s(c.email).includes(q);
+      });
     }
 
     return NextResponse.json(results);
@@ -80,7 +88,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('contacts')
       .insert(record)
-      .select('*, organizations!left(id, name)')
+      .select('*')
       .single();
 
     if (error) {
