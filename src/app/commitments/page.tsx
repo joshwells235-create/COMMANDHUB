@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, Zap, Filter, X } from 'lucide-react';
@@ -40,7 +40,7 @@ const VIEW_LABELS: Record<string, string> = {
   waiting: 'Waiting On',
 };
 
-export default function CommitmentsPage() {
+function CommitmentsPageContent() {
   const searchParams = useSearchParams();
   const viewParam = searchParams.get('view') || '';
 
@@ -215,5 +215,20 @@ export default function CommitmentsPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function CommitmentsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex items-center gap-2 text-muted">
+          <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          Loading...
+        </div>
+      </div>
+    }>
+      <CommitmentsPageContent />
+    </Suspense>
   );
 }
