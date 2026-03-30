@@ -131,6 +131,7 @@ ${isSent ? `Since Josh SENT this email:
 CRITICAL RULES:
 - When someone OTHER than Josh promises to do something, set owner="other" and commitment_type="waiting_on". Do NOT put these on Josh's plate.
 - Do NOT create commitments for attending meetings, joining calls, or showing up to events. The calendar handles scheduling. Only create commitments for actual action items — things to prepare, send, review, or follow up on.
+- Do NOT create commitments for recurring personal routines (sleep, deep work blocks, exercise, meals, travel logistics). These are calendar context, not actionable tasks.
 ${isSent ? `
 RESOLVED COMMITMENTS — compare this email against the PENDING COMMITMENTS list above. If Josh's sent email appears to fulfill or address any pending commitment, list the commitment IDs that should be marked complete or in-progress.` : ''}
 
