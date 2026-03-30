@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target, User } from 'lucide-react';
+import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target, User, Mail } from 'lucide-react';
 import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
@@ -79,8 +79,13 @@ export default function FocusView() {
   }, [commitments, waitingOn]);
 
   const [trends, setTrends] = useState<{ overdue: number[]; dueToday: number[]; completed: number[]; waiting: number[] } | null>(null);
+  const [emailQueue, setEmailQueue] = useState<{ unprocessed: number; total: number; processingRate: number } | null>(null);
+
   useEffect(() => {
     fetch('/api/stats/trends').then(r => r.json()).then(setTrends).catch(() => {});
+    fetch('/api/stats/scorecard').then(r => r.json()).then(data => {
+      if (data?.email) setEmailQueue(data.email);
+    }).catch(() => {});
   }, []);
 
   if (commitmentsLoading) {
@@ -358,6 +363,26 @@ export default function FocusView() {
             <div className="bg-card rounded-xl border border-border p-4">
               <ClientPulse />
             </div>
+
+            {/* Email Processing Status */}
+            {emailQueue && emailQueue.unprocessed > 0 && (
+              <div className="bg-card rounded-xl border border-border p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Mail className="w-4 h-4 text-primary" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Email Intelligence</h3>
+                  <span className="ml-auto text-xs text-muted">{emailQueue.processingRate}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-background rounded-full overflow-hidden mb-1.5">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-primary/60 to-primary transition-all"
+                    style={{ width: `${emailQueue.processingRate}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted">
+                  {emailQueue.unprocessed} emails queued for AI extraction
+                </p>
+              </div>
+            )}
 
             {/* Activity Feed */}
             <div className="bg-card rounded-xl border border-border p-4">
