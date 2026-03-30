@@ -28,7 +28,8 @@ export async function POST(request: NextRequest) {
     const supabase = createServerClient();
     const body = await request.json();
 
-    const { name, industry, status, strategic_value, notes, contacts } = body;
+    const { name, industry, status, strategic_value, notes, contacts,
+      website, phone, address, company_size, description } = body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json(
@@ -46,6 +47,11 @@ export async function POST(request: NextRequest) {
         status: status || 'active',
         strategic_value: strategic_value || 'standard',
         notes: notes || null,
+        website: website || null,
+        phone: phone || null,
+        address: address || null,
+        company_size: company_size || null,
+        description: description || null,
       })
       .select()
       .single();

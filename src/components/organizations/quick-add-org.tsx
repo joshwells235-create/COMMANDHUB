@@ -29,6 +29,10 @@ export function QuickAddOrg({ isOpen, onClose, onSuccess }: QuickAddOrgProps) {
   const [status, setStatus] = useState<OrgStatus>('active');
   const [strategicValue, setStrategicValue] = useState<StrategicValue>('standard');
   const [notes, setNotes] = useState('');
+  const [website, setWebsite] = useState('');
+  const [phone, setPhone] = useState('');
+  const [description, setDescription] = useState('');
+  const [companySize, setCompanySize] = useState('');
   const [showContact, setShowContact] = useState(false);
   const [contactName, setContactName] = useState('');
   const [contactRole, setContactRole] = useState('');
@@ -60,6 +64,10 @@ export function QuickAddOrg({ isOpen, onClose, onSuccess }: QuickAddOrgProps) {
     setStatus('active');
     setStrategicValue('standard');
     setNotes('');
+    setWebsite('');
+    setPhone('');
+    setDescription('');
+    setCompanySize('');
     setShowContact(false);
     setContactName('');
     setContactRole('');
@@ -79,6 +87,10 @@ export function QuickAddOrg({ isOpen, onClose, onSuccess }: QuickAddOrgProps) {
         status,
         strategic_value: strategicValue,
         notes: notes.trim() || undefined,
+        website: website.trim() || undefined,
+        phone: phone.trim() || undefined,
+        description: description.trim() || undefined,
+        company_size: companySize || undefined,
       };
 
       if (showContact && contactName.trim()) {
@@ -183,6 +195,59 @@ export function QuickAddOrg({ isOpen, onClose, onSuccess }: QuickAddOrgProps) {
               </option>
             ))}
           </select>
+        </div>
+
+        {/* Description + Company Size */}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-muted block mb-1">Description</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What they do"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm placeholder:text-muted/50 focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted block mb-1">Company Size</label>
+            <select
+              value={companySize}
+              onChange={(e) => setCompanySize(e.target.value)}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">Select</option>
+              <option value="1-10">1-10</option>
+              <option value="11-50">11-50</option>
+              <option value="51-200">51-200</option>
+              <option value="201-500">201-500</option>
+              <option value="500+">500+</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Website + Phone */}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-muted block mb-1">Website</label>
+            <input
+              type="url"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="https://..."
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm placeholder:text-muted/50 focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted block mb-1">Phone</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Phone number"
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm placeholder:text-muted/50 focus:outline-none focus:border-primary"
+            />
+          </div>
         </div>
 
         {/* Notes */}

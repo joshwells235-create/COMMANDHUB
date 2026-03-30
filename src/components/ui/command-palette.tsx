@@ -13,6 +13,7 @@ import {
   ArrowRight,
   MessageSquare,
   BarChart3,
+  User,
 } from 'lucide-react';
 
 interface CommandItem {
@@ -57,6 +58,7 @@ export function CommandPalette({
     // Navigation
     { id: 'nav-dashboard', label: 'Dashboard', sublabel: 'Go to home', icon: Target, action: () => navigate('/'), category: 'navigate' },
     { id: 'nav-clients', label: 'Clients', sublabel: 'View all clients', icon: Users, action: () => navigate('/clients'), category: 'navigate' },
+    { id: 'nav-people', label: 'People', sublabel: 'View all contacts & people', icon: User, action: () => navigate('/contacts'), category: 'navigate' },
     { id: 'nav-commitments', label: 'Commitments', sublabel: 'View all commitments', icon: Target, action: () => navigate('/commitments'), category: 'navigate' },
     { id: 'nav-transcripts', label: 'Transcripts', sublabel: 'Upload & view transcripts', icon: FileText, action: () => navigate('/transcripts'), category: 'navigate' },
     { id: 'nav-followups', label: 'Follow-ups', sublabel: 'Follow-up queue', icon: PhoneForwarded, action: () => navigate('/follow-ups'), category: 'navigate' },

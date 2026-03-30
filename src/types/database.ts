@@ -26,9 +26,17 @@ export interface Organization {
   notes: string | null;
   status: OrgStatus;
   strategic_value: StrategicValue;
+  website: string | null;
+  phone: string | null;
+  address: string | null;
+  company_size: string | null;
+  primary_contact_id: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type ContactCategory = 'business' | 'personal' | 'partner';
 
 export interface Contact {
   id: string;
@@ -36,9 +44,21 @@ export interface Contact {
   name: string;
   role: string | null;
   email: string | null;
+  phone: string | null;
+  linkedin_url: string | null;
+  title: string | null;
+  company: string | null;
+  category: ContactCategory;
   relationship_type: string | null;
+  personality_notes: string | null;
+  coaching_focus: string | null;
+  communication_style: string | null;
+  last_interaction_date: string | null;
   notes: string | null;
   created_at: string;
+  updated_at: string;
+  // Joined fields
+  organization?: Organization;
 }
 
 export interface Engagement {

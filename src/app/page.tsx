@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target } from 'lucide-react';
+import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target, User } from 'lucide-react';
 import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
@@ -125,6 +125,10 @@ export default function FocusView() {
               <Link href="/clients" className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-muted hover:text-foreground transition-colors rounded-md hover:bg-card">
                 <Users className="w-4 h-4" />
                 Clients
+              </Link>
+              <Link href="/contacts" className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-muted hover:text-foreground transition-colors rounded-md hover:bg-card">
+                <User className="w-4 h-4" />
+                People
               </Link>
               <Link href="/transcripts" className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-muted hover:text-foreground transition-colors rounded-md hover:bg-card">
                 <FileText className="w-4 h-4" />
@@ -347,6 +351,10 @@ export default function FocusView() {
           <Link href="/clients" className="flex flex-col items-center gap-0.5 px-3 py-1 text-muted hover:text-foreground transition-colors">
             <Users className="w-5 h-5" />
             <span className="text-[10px] font-medium">Clients</span>
+          </Link>
+          <Link href="/contacts" className="flex flex-col items-center gap-0.5 px-3 py-1 text-muted hover:text-foreground transition-colors">
+            <User className="w-5 h-5" />
+            <span className="text-[10px] font-medium">People</span>
           </Link>
           <Link href="/transcripts" className="flex flex-col items-center gap-0.5 px-3 py-1 text-muted hover:text-foreground transition-colors">
             <FileText className="w-5 h-5" />

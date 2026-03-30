@@ -31,7 +31,10 @@ export async function GET(
   }
 }
 
-const ALLOWED_FIELDS = ['name', 'status', 'strategic_value', 'industry', 'notes'];
+const ALLOWED_FIELDS = [
+  'name', 'status', 'strategic_value', 'industry', 'notes',
+  'website', 'phone', 'address', 'company_size', 'primary_contact_id', 'description',
+];
 
 export async function PATCH(
   request: NextRequest,
