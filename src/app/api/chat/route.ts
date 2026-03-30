@@ -32,7 +32,7 @@ interface StructuredResponse {
 // ---------------------------------------------------------------------------
 
 function needsRAG(message: string): boolean {
-  const ragKeywords = ['session', 'said', 'discussed', 'theme', 'transcript', 'mentioned', 'talked about', 'conversation', 'coaching', 'worried', 'concerned', 'going on', 'happening', 'issues', 'problems'];
+  const ragKeywords = ['session', 'said', 'discussed', 'theme', 'transcript', 'mentioned', 'talked about', 'conversation', 'coaching', 'worried', 'concerned', 'going on', 'happening', 'issues', 'problems', 'email', 'emailed', 'wrote', 'sent', 'replied', 'message', 'commitment', 'promised', 'overdue', 'waiting'];
   const lower = message.toLowerCase();
   return ragKeywords.some((kw) => lower.includes(kw));
 }
@@ -638,6 +638,57 @@ Return as plain text, formatted for quick reading. Use short paragraphs and bull
               type: action.type,
               success: true,
               details: 'No transcript matches found for that query.',
+            });
+          }
+          break;
+        }
+
+        case 'search_emails': {
+          const d = action.data as { query?: string; org_name?: string };
+          if (!d.query) {
+            results.push({ type: action.type, success: false, details: 'Missing search query' });
+            break;
+          }
+
+          let orgIdFilter: string | null = null;
+          if (d.org_name) {
+            const matchedOrg = allOrgs.find(
+              (o) => o.name.toLowerCase() === d.org_name!.toLowerCase()
+            );
+            if (matchedOrg) orgIdFilter = matchedOrg.id;
+          }
+
+          let query = supabase
+            .from('emails')
+            .select('subject, sender, sender_email, body_preview, received_at, folder, ai_extraction')
+            .eq('is_processed', true)
+            .ilike('subject', `%${d.query}%`)
+            .order('received_at', { ascending: false })
+            .limit(10);
+
+          if (orgIdFilter) {
+            query = query.eq('org_id', orgIdFilter);
+          }
+
+          const { data: emailResults } = await query;
+
+          if (emailResults && emailResults.length > 0) {
+            const snippets = emailResults.map((e) => {
+              const extraction = e.ai_extraction as Record<string, unknown> | null;
+              const dir = e.folder === 'sent' ? 'SENT' : 'RECEIVED';
+              return `[${dir}] ${e.subject} — ${e.sender} (${e.received_at?.split('T')[0] || 'unknown'})
+  ${e.body_preview?.substring(0, 200) || 'No preview'}${extraction?.email_summary ? `\n  Summary: ${extraction.email_summary}` : ''}`;
+            });
+            results.push({
+              type: action.type,
+              success: true,
+              details: snippets.join('\n\n'),
+            });
+          } else {
+            results.push({
+              type: action.type,
+              success: true,
+              details: 'No email matches found for that query.',
             });
           }
           break;
@@ -1536,6 +1587,126 @@ ${fallbackChunks.map((c: Record<string, unknown>) => {
       }
     }
 
+    // ---------------------------------------------------------------
+    // Email search — find emails matching query keywords
+    // ---------------------------------------------------------------
+    const emailKeywords = ['email', 'emailed', 'wrote', 'sent', 'replied', 'message', 'inbox'];
+    const shouldSearchEmails = emailKeywords.some((kw) => message.toLowerCase().includes(kw)) || mentionedOrgs.length > 0;
+    if (shouldSearchEmails) {
+      try {
+        const messageTerms = message
+          .toLowerCase()
+          .replace(/[^\w\s]/g, '')
+          .split(/\s+/)
+          .filter((w) => w.length > 3 && !['email', 'emailed', 'about', 'what', 'when', 'from', 'send', 'sent'].includes(w));
+
+        // Search by org if mentioned, otherwise by keywords in subject/body
+        let emailSearchResults: Array<Record<string, unknown>> = [];
+        for (const org of mentionedOrgs) {
+          const { data: orgEmails } = await supabase
+            .from('emails')
+            .select('subject, sender, sender_email, body_preview, received_at, folder, ai_extraction')
+            .eq('org_id', org.id)
+            .eq('is_processed', true)
+            .order('received_at', { ascending: false })
+            .limit(10);
+          if (orgEmails) emailSearchResults.push(...orgEmails.map((e) => ({ ...e, _org: org.name })));
+        }
+
+        // Also search by keyword in subject if no org match found enough
+        if (emailSearchResults.length < 5 && messageTerms.length > 0) {
+          for (const term of messageTerms.slice(0, 3)) {
+            const { data: keywordEmails } = await supabase
+              .from('emails')
+              .select('subject, sender, sender_email, body_preview, received_at, folder, ai_extraction')
+              .eq('is_processed', true)
+              .ilike('subject', `%${term}%`)
+              .order('received_at', { ascending: false })
+              .limit(5);
+            if (keywordEmails) {
+              for (const e of keywordEmails) {
+                if (!emailSearchResults.some((r) => r.subject === e.subject && r.received_at === e.received_at)) {
+                  emailSearchResults.push(e);
+                }
+              }
+            }
+          }
+        }
+
+        if (emailSearchResults.length > 0) {
+          ragContext += `\n\nEMAIL SEARCH RESULTS (${emailSearchResults.length} emails found):
+${emailSearchResults.slice(0, 10).map((e) => {
+  const extraction = e.ai_extraction as Record<string, unknown> | null;
+  const dir = e.folder === 'sent' ? 'SENT' : 'RECEIVED';
+  const orgLabel = e._org ? ` [${e._org}]` : '';
+  return `[${dir}${orgLabel}] ${e.subject} — ${e.sender} (${(e.received_at as string)?.split('T')[0] || 'unknown'})
+  Preview: ${(e.body_preview as string)?.substring(0, 200) || 'No preview'}
+  ${extraction?.email_summary ? `AI Summary: ${extraction.email_summary}` : ''}
+  ${extraction?.sentiment && extraction.sentiment !== 'neutral' ? `Sentiment: ${extraction.sentiment}` : ''}`;
+}).join('\n\n')}`;
+        }
+      } catch (err) {
+        console.error('Email search failed (non-fatal):', err);
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // Commitment search — find commitments matching query
+    // ---------------------------------------------------------------
+    const commitmentKeywords = ['commitment', 'promised', 'overdue', 'waiting', 'due', 'todo', 'task', 'follow up', 'deliverable'];
+    const shouldSearchCommitments = commitmentKeywords.some((kw) => message.toLowerCase().includes(kw)) && !mentionedOrgs.length;
+    if (shouldSearchCommitments) {
+      try {
+        const messageTerms = message
+          .toLowerCase()
+          .replace(/[^\w\s]/g, '')
+          .split(/\s+/)
+          .filter((w) => w.length > 3 && !commitmentKeywords.includes(w));
+
+        if (messageTerms.length > 0) {
+          for (const term of messageTerms.slice(0, 2)) {
+            const { data: matchedCommitments } = await supabase
+              .from('commitments')
+              .select('id, title, description, commitment_type, owner, status, due_date, org_id, other_party, priority_score')
+              .ilike('title', `%${term}%`)
+              .order('priority_score', { ascending: false })
+              .limit(10);
+
+            if (matchedCommitments && matchedCommitments.length > 0) {
+              ragContext += `\n\nCOMMITMENT SEARCH RESULTS for "${term}":
+${matchedCommitments.map((c) => `- [id:${c.id}] [${c.owner}] ${c.title} (${c.commitment_type}, ${c.status}${c.due_date ? ', due ' + c.due_date.split('T')[0] : ''}${c.other_party ? ', other: ' + c.other_party : ''})`).join('\n')}`;
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Commitment search failed (non-fatal):', err);
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // Lifecycle + Health intelligence for mentioned orgs
+    // ---------------------------------------------------------------
+    for (const org of mentionedOrgs) {
+      try {
+        // Fetch lifecycle stage
+        const { data: lifecycleData } = await supabase
+          .from('josh_profile')
+          .select('profile_data')
+          .eq('profile_type', 'lifecycle_stages')
+          .single();
+
+        if (lifecycleData?.profile_data) {
+          const stages = lifecycleData.profile_data as Array<{ org_id: string; stage: string; reasoning?: string }>;
+          const orgStage = Array.isArray(stages) ? stages.find((s) => s.org_id === org.id) : null;
+          if (orgStage) {
+            ragContext += `\n\nLIFECYCLE STAGE for ${org.name}: ${orgStage.stage}${orgStage.reasoning ? ` — ${orgStage.reasoning}` : ''}`;
+          }
+        }
+      } catch {
+        // Non-critical
+      }
+    }
+
     // Build system prompt
     const todayStr = new Date().toISOString().split('T')[0];
     const mentionedOrgNames = mentionedOrgs.map((o) => o.name).join(', ');
@@ -1585,6 +1756,7 @@ When an action is needed, your ENTIRE response must be ONLY the JSON object belo
     {"type": "generate_draft", "data": {"org_name": "...", "draft_type": "follow_up_email|session_summary|proposal_intro|general", "context": "..."}},
     {"type": "generate_briefing", "data": {"org_name": "..."}},
     {"type": "search_transcripts", "data": {"query": "..."}},
+    {"type": "search_emails", "data": {"query": "...", "org_name": "optional org filter"}},
     {"type": "get_client_health", "data": {"org_name": "..."}},
     {"type": "get_prep", "data": {"org_name": "..."}},
     {"type": "create_contact", "data": {"org_name": "...", "name": "...", "role": "...", "email": "...", "relationship_type": "champion|decision_maker|influencer|coach|admin|participant", "notes": "..."}},

@@ -3,6 +3,7 @@ import { syncCalendar } from '@/lib/microsoft-graph';
 import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
+import { matchOrgByName, matchOrgByContacts, matchOrgBySubject } from '@/lib/match-org';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
 
       const { data: contacts } = await supabase
         .from('contacts')
-        .select('name, id, org_id, role, relationship_type');
+        .select('name, id, org_id, role, relationship_type, email');
 
       const orgList = (orgs || []).map((o) => o.name).join(', ');
       const contactList = (contacts || [])
@@ -107,11 +108,27 @@ Return JSON only:
             const analysis = JSON.parse(jsonStr);
 
             let matchedOrgId: string | null = null;
-            if (analysis.org_match) {
-              const matchedOrg = orgs?.find(
-                (o) => o.name.toLowerCase() === analysis.org_match.toLowerCase()
-              );
+            if (analysis.org_match && orgs) {
+              const matchedOrg = matchOrgByName(analysis.org_match, orgs);
               if (matchedOrg) matchedOrgId = matchedOrg.id;
+            }
+
+            // Fallback: match attendee emails/names against contacts table
+            if (!matchedOrgId && event.attendees && contacts) {
+              const attendeeList = event.attendees as Array<{ emailAddress?: { name?: string; address?: string } }>;
+              const attendeeEmails = attendeeList
+                .map((a) => a.emailAddress?.address)
+                .filter(Boolean) as string[];
+              const attendeeNames = attendeeList
+                .map((a) => a.emailAddress?.name)
+                .filter(Boolean) as string[];
+              matchedOrgId = matchOrgByContacts(attendeeEmails, attendeeNames, contacts);
+            }
+
+            // Fallback: match event subject against org names
+            if (!matchedOrgId && event.subject && orgs) {
+              const subjectOrg = matchOrgBySubject(event.subject, orgs);
+              if (subjectOrg) matchedOrgId = subjectOrg.id;
             }
 
             await supabase

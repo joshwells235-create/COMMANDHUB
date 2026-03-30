@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
+import { matchOrgByName, matchOrgByContacts } from '@/lib/match-org';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -213,13 +214,25 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
   }
   const extraction = JSON.parse(jsonStr);
 
-  // Match org name to ID
+  // Match org name to ID (fuzzy matching with contact-based fallback)
   let matchedOrgId: string | null = null;
   if (extraction.org_match) {
-    const matchedOrg = orgs.find(
-      (o) => o.name.toLowerCase() === extraction.org_match.toLowerCase()
-    );
+    const matchedOrg = matchOrgByName(extraction.org_match, orgs);
     if (matchedOrg) matchedOrgId = matchedOrg.id;
+  }
+
+  // Fallback: try matching sender email/name against contacts table
+  if (!matchedOrgId) {
+    const senderEmails = [email.sender_email as string].filter(Boolean);
+    const recipientEmails = Array.isArray(email.recipients)
+      ? (email.recipients as Array<{ address?: string }>)
+          .map((r) => r.address)
+          .filter(Boolean) as string[]
+      : [];
+    const allEmails = [...senderEmails, ...recipientEmails];
+    const senderNames = [email.sender as string].filter(Boolean);
+
+    matchedOrgId = matchOrgByContacts(allEmails, senderNames, contacts);
   }
 
   // Determine review status based on intelligence
