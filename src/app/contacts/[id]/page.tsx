@@ -26,6 +26,10 @@ import {
   ChevronRight,
   AlertTriangle,
   Trash2,
+  ClipboardPaste,
+  Sparkles,
+  Shield,
+  Plus,
 } from 'lucide-react';
 import type { Contact, Organization, Commitment } from '@/types/database';
 import { cn, getCommitmentTypeLabel, getDueLabel } from '@/lib/utils';
@@ -35,6 +39,37 @@ const RELATIONSHIP_TYPES = [
   'champion', 'decision_maker', 'influencer', 'coach', 'admin',
   'participant', 'coachee', 'sponsor', 'stakeholder', 'partner', 'friend', 'family',
 ];
+
+const ASSESSMENT_TYPES = [
+  { value: 'predictive_index', label: 'Predictive Index (PI)' },
+  { value: 'eq_i_2', label: 'EQ-i 2.0' },
+  { value: 'five_dysfunctions', label: 'Five Dysfunctions' },
+  { value: 'disc', label: 'DiSC' },
+  { value: 'strengthsfinder', label: 'CliftonStrengths' },
+  { value: 'mbti', label: 'MBTI' },
+  { value: 'custom', label: 'Other' },
+];
+
+interface Assessment {
+  id: string;
+  contact_id: string;
+  assessment_type: string;
+  title: string;
+  assessment_date: string | null;
+  raw_text: string | null;
+  summary: string | null;
+  key_findings: {
+    scores?: Record<string, unknown>;
+    highlights?: string[];
+    areas_of_strength?: string[];
+    development_areas?: string[];
+    behavioral_drives?: string[];
+    under_pressure?: string;
+  } | null;
+  ai_analysis: string | null;
+  notes: string | null;
+  created_at: string;
+}
 
 interface TranscriptMention {
   id: string;
@@ -57,8 +92,19 @@ export default function ContactDetailPage() {
   const [saving, setSaving] = useState(false);
   const [editFields, setEditFields] = useState<Record<string, string>>({});
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [showAddAssessment, setShowAddAssessment] = useState(false);
+  const [newAssessmentType, setNewAssessmentType] = useState('predictive_index');
+  const [newAssessmentTitle, setNewAssessmentTitle] = useState('');
+  const [newAssessmentDate, setNewAssessmentDate] = useState('');
+  const [newAssessmentText, setNewAssessmentText] = useState('');
+  const [newAssessmentNotes, setNewAssessmentNotes] = useState('');
+  const [savingAssessment, setSavingAssessment] = useState(false);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [expandedAssessment, setExpandedAssessment] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     profile: true,
+    assessments: true,
     transcripts: true,
     commitments: true,
   });
@@ -109,6 +155,15 @@ export default function ContactDetailPage() {
         );
         setCommitments(relevant);
       }
+
+      // Fetch assessments for this contact
+      try {
+        const assessRes = await fetch(`/api/assessments?contact_id=${contactId}`);
+        if (assessRes.ok) {
+          const assessData = await assessRes.json();
+          setAssessments(Array.isArray(assessData) ? assessData : []);
+        }
+      } catch { /* ignore */ }
 
       setError(null);
     } catch (err) {
@@ -180,6 +235,82 @@ export default function ContactDetailPage() {
       window.location.href = '/contacts';
     } catch {
       toast.error('Failed to delete contact');
+    }
+  }
+
+  async function saveAssessment() {
+    if (!newAssessmentText.trim()) {
+      toast.error('Please paste the assessment text');
+      return;
+    }
+    setSavingAssessment(true);
+    try {
+      const typeLabel = ASSESSMENT_TYPES.find((t) => t.value === newAssessmentType)?.label || newAssessmentType;
+      const res = await fetch('/api/assessments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact_id: contactId,
+          org_id: contact?.org_id || null,
+          assessment_type: newAssessmentType,
+          title: newAssessmentTitle.trim() || `${typeLabel} Assessment`,
+          assessment_date: newAssessmentDate || null,
+          raw_text: newAssessmentText,
+          notes: newAssessmentNotes || null,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      const saved = await res.json();
+      setAssessments((prev) => [saved, ...prev]);
+      setShowAddAssessment(false);
+      setNewAssessmentType('predictive_index');
+      setNewAssessmentTitle('');
+      setNewAssessmentDate('');
+      setNewAssessmentText('');
+      setNewAssessmentNotes('');
+      toast.success('Assessment saved');
+    } catch {
+      toast.error('Failed to save assessment');
+    } finally {
+      setSavingAssessment(false);
+    }
+  }
+
+  async function analyzeAssessment(assessmentId: string) {
+    setAnalyzingId(assessmentId);
+    try {
+      const res = await fetch('/api/assessments/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessment_id: assessmentId }),
+      });
+      if (!res.ok) throw new Error('Analysis failed');
+      const result = await res.json();
+      setAssessments((prev) =>
+        prev.map((a) =>
+          a.id === assessmentId
+            ? { ...a, summary: result.summary, key_findings: result.key_findings, ai_analysis: result.ai_analysis }
+            : a
+        )
+      );
+      setExpandedAssessment(assessmentId);
+      toast.success('Analysis complete');
+    } catch {
+      toast.error('AI analysis failed — try again');
+    } finally {
+      setAnalyzingId(null);
+    }
+  }
+
+  async function deleteAssessment(assessmentId: string) {
+    if (!confirm('Delete this assessment?')) return;
+    try {
+      const res = await fetch(`/api/assessments/${assessmentId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed');
+      setAssessments((prev) => prev.filter((a) => a.id !== assessmentId));
+      toast.success('Assessment deleted');
+    } catch {
+      toast.error('Failed to delete assessment');
     }
   }
 
@@ -444,6 +575,251 @@ export default function ContactDetailPage() {
             )}
           </section>
         )}
+
+        {/* Assessments */}
+        <section>
+          <button onClick={() => toggleSection('assessments')} className="w-full flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+              Assessments ({assessments.length})
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowAddAssessment(!showAddAssessment); }}
+                className="text-primary hover:text-primary/80 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              {expandedSections.assessments ? <ChevronDown className="w-4 h-4 text-muted" /> : <ChevronRight className="w-4 h-4 text-muted" />}
+            </div>
+          </button>
+          {expandedSections.assessments && (
+            <div className="space-y-3">
+              {/* Add Assessment Form */}
+              {showAddAssessment && (
+                <div className="bg-card rounded-lg p-4 border border-primary/30 space-y-3">
+                  <h4 className="text-xs font-semibold text-primary uppercase tracking-wider flex items-center gap-1">
+                    <ClipboardPaste className="w-3.5 h-3.5" /> Add Assessment
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-muted block mb-1">Type</label>
+                      <select value={newAssessmentType} onChange={(e) => setNewAssessmentType(e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary">
+                        {ASSESSMENT_TYPES.map((t) => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted block mb-1">Date Taken</label>
+                      <input type="date" value={newAssessmentDate}
+                        onChange={(e) => setNewAssessmentDate(e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-muted block mb-1">Title (optional)</label>
+                      <input type="text" value={newAssessmentTitle}
+                        onChange={(e) => setNewAssessmentTitle(e.target.value)}
+                        placeholder={`${ASSESSMENT_TYPES.find((t) => t.value === newAssessmentType)?.label || ''} Assessment`}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-muted block mb-1">Assessment Results (paste text)</label>
+                      <textarea value={newAssessmentText} rows={6}
+                        onChange={(e) => setNewAssessmentText(e.target.value)}
+                        placeholder="Paste the full assessment results here..."
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none font-mono text-xs" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-xs text-muted block mb-1">Notes (optional)</label>
+                      <textarea value={newAssessmentNotes} rows={2}
+                        onChange={(e) => setNewAssessmentNotes(e.target.value)}
+                        placeholder="Any additional context..."
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={saveAssessment} disabled={savingAssessment || !newAssessmentText.trim()}
+                      className="flex items-center gap-1 px-3 py-1.5 btn-gradient text-white rounded-md text-xs font-medium disabled:opacity-50">
+                      {savingAssessment ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save Assessment
+                    </button>
+                    <button onClick={() => setShowAddAssessment(false)}
+                      className="px-3 py-1.5 bg-card-hover text-muted rounded-md text-xs font-medium hover:text-foreground">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Assessment List */}
+              {assessments.length === 0 && !showAddAssessment ? (
+                <div className="text-center py-6">
+                  <Shield className="w-6 h-6 text-muted/30 mx-auto mb-2" />
+                  <p className="text-xs text-muted">No assessments uploaded yet.</p>
+                  <button onClick={() => setShowAddAssessment(true)}
+                    className="text-xs text-primary mt-1 hover:underline">Add one</button>
+                </div>
+              ) : (
+                assessments.map((a) => {
+                  const typeLabel = ASSESSMENT_TYPES.find((t) => t.value === a.assessment_type)?.label || a.assessment_type;
+                  const isExpanded = expandedAssessment === a.id;
+                  const isAnalyzing = analyzingId === a.id;
+
+                  return (
+                    <div key={a.id} className="bg-card rounded-lg border border-border/50 overflow-hidden">
+                      <button
+                        onClick={() => setExpandedAssessment(isExpanded ? null : a.id)}
+                        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-card-hover/50 transition-colors text-left"
+                      >
+                        <Shield className="w-4 h-4 text-primary flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-foreground truncate">{a.title}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary flex-shrink-0">
+                              {typeLabel}
+                            </span>
+                          </div>
+                          {a.summary && (
+                            <p className="text-xs text-muted line-clamp-1 mt-0.5">{a.summary}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {a.assessment_date && (
+                            <span className="text-xs text-muted">{format(new Date(a.assessment_date), 'MMM d, yyyy')}</span>
+                          )}
+                          {isExpanded ? <ChevronDown className="w-4 h-4 text-muted" /> : <ChevronRight className="w-4 h-4 text-muted" />}
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="px-4 pb-4 space-y-3 border-t border-border/30 pt-3">
+                          {/* AI Analysis button */}
+                          {a.raw_text && !a.ai_analysis && (
+                            <button onClick={() => analyzeAssessment(a.id)} disabled={isAnalyzing}
+                              className="flex items-center gap-1.5 px-3 py-1.5 btn-gradient text-white rounded-md text-xs font-medium disabled:opacity-50">
+                              {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                              {isAnalyzing ? 'Analyzing...' : 'Analyze with AI'}
+                            </button>
+                          )}
+
+                          {/* Summary */}
+                          {a.summary && (
+                            <div>
+                              <h5 className="text-xs font-semibold text-primary uppercase tracking-wider mb-1">Summary</h5>
+                              <p className="text-sm text-foreground leading-relaxed">{a.summary}</p>
+                            </div>
+                          )}
+
+                          {/* Key Findings */}
+                          {a.key_findings && (
+                            <div className="space-y-2">
+                              {a.key_findings.highlights && a.key_findings.highlights.length > 0 && (
+                                <div>
+                                  <h5 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">Highlights</h5>
+                                  <ul className="text-xs text-foreground space-y-0.5">
+                                    {a.key_findings.highlights.map((h, i) => (
+                                      <li key={i} className="flex items-start gap-1.5">
+                                        <Lightbulb className="w-3 h-3 text-warning flex-shrink-0 mt-0.5" />
+                                        <span>{h}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {a.key_findings.areas_of_strength && a.key_findings.areas_of_strength.length > 0 && (
+                                <div>
+                                  <h5 className="text-xs font-semibold text-success uppercase tracking-wider mb-1">Strengths</h5>
+                                  <ul className="text-xs text-foreground space-y-0.5">
+                                    {a.key_findings.areas_of_strength.map((s, i) => (
+                                      <li key={i} className="flex items-start gap-1.5">
+                                        <CheckCircle2 className="w-3 h-3 text-success flex-shrink-0 mt-0.5" />
+                                        <span>{s}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {a.key_findings.development_areas && a.key_findings.development_areas.length > 0 && (
+                                <div>
+                                  <h5 className="text-xs font-semibold text-warning uppercase tracking-wider mb-1">Development Areas</h5>
+                                  <ul className="text-xs text-foreground space-y-0.5">
+                                    {a.key_findings.development_areas.map((d, i) => (
+                                      <li key={i} className="flex items-start gap-1.5">
+                                        <Target className="w-3 h-3 text-warning flex-shrink-0 mt-0.5" />
+                                        <span>{d}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {a.key_findings.behavioral_drives && a.key_findings.behavioral_drives.length > 0 && (
+                                <div>
+                                  <h5 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">Behavioral Drives</h5>
+                                  <ul className="text-xs text-foreground space-y-0.5">
+                                    {a.key_findings.behavioral_drives.map((b, i) => (
+                                      <li key={i} className="flex items-start gap-1.5">
+                                        <Brain className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
+                                        <span>{b}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {a.key_findings.under_pressure && (
+                                <div>
+                                  <h5 className="text-xs font-semibold text-danger uppercase tracking-wider mb-1">Under Pressure</h5>
+                                  <p className="text-xs text-foreground">{a.key_findings.under_pressure}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* AI Coaching Analysis */}
+                          {a.ai_analysis && (
+                            <div>
+                              <h5 className="text-xs font-semibold text-primary uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <Sparkles className="w-3 h-3" /> Coaching Analysis
+                              </h5>
+                              <div className="text-sm text-foreground leading-relaxed whitespace-pre-line">{a.ai_analysis}</div>
+                            </div>
+                          )}
+
+                          {/* Notes */}
+                          {a.notes && (
+                            <div>
+                              <h5 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">Notes</h5>
+                              <p className="text-xs text-muted">{a.notes}</p>
+                            </div>
+                          )}
+
+                          {/* Raw text preview */}
+                          {a.raw_text && (
+                            <details className="text-xs">
+                              <summary className="text-muted cursor-pointer hover:text-foreground">
+                                Raw assessment text ({a.raw_text.length.toLocaleString()} chars)
+                              </summary>
+                              <pre className="mt-2 bg-background rounded-lg p-3 text-muted font-mono text-[10px] max-h-48 overflow-auto whitespace-pre-wrap">
+                                {a.raw_text.slice(0, 5000)}{a.raw_text.length > 5000 ? '\n...(truncated)' : ''}
+                              </pre>
+                            </details>
+                          )}
+
+                          {/* Delete */}
+                          <div className="pt-1 flex justify-end">
+                            <button onClick={() => deleteAssessment(a.id)}
+                              className="text-xs text-danger/60 hover:text-danger flex items-center gap-1">
+                              <Trash2 className="w-3 h-3" /> Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </section>
 
         {/* Transcript Mentions */}
         <section>
