@@ -11,11 +11,16 @@ interface BootstrapResults {
   methodology: { success: boolean; error?: string; transcriptsAnalyzed?: number };
   emailOrgMatch: { success: boolean; error?: string; matched?: number; total?: number };
   calendarOrgMatch: { success: boolean; error?: string; matched?: number; total?: number };
+  emailRequeue: { success: boolean; error?: string; requeued?: number };
 }
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const url = new URL(request.url);
+  const keyParam = url.searchParams.get('key');
+  const secret = process.env.CRON_SECRET;
+
+  if (authHeader !== `Bearer ${secret}` && keyParam !== secret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -25,6 +30,7 @@ export async function GET(request: NextRequest) {
     methodology: { success: false },
     emailOrgMatch: { success: false },
     calendarOrgMatch: { success: false },
+    emailRequeue: { success: false },
   };
 
   // ── Section 1: Voice Profile Generation ──────────────────────────────
@@ -502,6 +508,36 @@ Analyze all of these transcripts and extract Josh's engagement methodology. Retu
   } catch (error) {
     console.error('Calendar org-matching error:', error);
     results.calendarOrgMatch = {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+
+  // ── Section 5: Requeue Failed Emails for Reprocessing ────────────────
+  try {
+    // Reset error emails so the sync-email cron retries them
+    const { data: errorEmails, error: fetchError } = await supabase
+      .from('emails')
+      .select('id')
+      .eq('review_status', 'error');
+
+    if (fetchError) throw new Error(`Failed to fetch error emails: ${fetchError.message}`);
+
+    let requeued = 0;
+    if (errorEmails && errorEmails.length > 0) {
+      const { error: updateError } = await supabase
+        .from('emails')
+        .update({ is_processed: false, review_status: 'pending' })
+        .eq('review_status', 'error');
+
+      if (updateError) throw new Error(`Failed to requeue emails: ${updateError.message}`);
+      requeued = errorEmails.length;
+    }
+
+    results.emailRequeue = { success: true, requeued };
+  } catch (error) {
+    console.error('Email requeue error:', error);
+    results.emailRequeue = {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
     };
