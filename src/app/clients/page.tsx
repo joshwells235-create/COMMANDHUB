@@ -208,7 +208,7 @@ export default function ClientsPage() {
                       <h3 className="font-semibold text-foreground truncate">
                         {org.name}
                       </h3>
-                      {lifecycleMap[org.id] && (
+                      {lifecycleMap[org.id] && lifecycleBadgeConfig[lifecycleMap[org.id]] && (
                         <span
                           className={cn(
                             'text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0',

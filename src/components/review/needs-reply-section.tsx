@@ -51,7 +51,7 @@ export function NeedsReplySection({ emails }: NeedsReplySectionProps) {
       <div className="space-y-1">
         {sorted.map((email) => {
           const urgency = email.ai_extraction?.reply_urgency ?? 'no_rush';
-          const config = urgencyConfig[urgency];
+          const config = urgencyConfig[urgency] || urgencyConfig['no_rush'];
           const isExpanded = expandedId === email.id;
           const subjectTruncated =
             email.subject.length > 50

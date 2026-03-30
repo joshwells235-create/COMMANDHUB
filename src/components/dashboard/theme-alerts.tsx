@@ -126,7 +126,7 @@ export function ThemeAlerts() {
       <div className="bg-card rounded-lg border border-border/50 divide-y divide-border/50">
         {/* Theme rows */}
         {data.themes.map((alert, i) => {
-          const config = severityConfig[alert.severity];
+          const config = severityConfig[alert.severity as keyof typeof severityConfig] || severityConfig.trend;
           const isExpanded = expandedIndex === i;
 
           return (
