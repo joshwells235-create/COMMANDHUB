@@ -23,15 +23,24 @@ export async function GET(request: Request) {
     // 1. Fetch today's calendar events
     const { data: events } = await supabase
       .from('calendar_events')
-      .select('id, subject, start_time, end_time, location, ai_analysis, org_id, organizations(id, name)')
+      .select('id, subject, start_time, end_time, location, ai_analysis, org_id')
       .gte('start_time', `${todayStr}T00:00:00`)
       .lt('start_time', `${tomorrowStr}T00:00:00`)
+      .order('start_time', { ascending: true });
+
+    // 1b. Fetch next 7 days of calendar events (lookahead)
+    const weekAheadEnd = new Date(today.getTime() + 7 * 86400000);
+    const { data: weekAheadEvents } = await supabase
+      .from('calendar_events')
+      .select('id, subject, start_time, end_time, ai_analysis, org_id')
+      .gte('start_time', `${tomorrowStr}T00:00:00`)
+      .lt('start_time', weekAheadEnd.toISOString())
       .order('start_time', { ascending: true });
 
     // 2. Overdue commitments (Josh owns)
     const { data: overdueCommitments } = await supabase
       .from('commitments')
-      .select('id, title, commitment_type, due_date, priority_score, organizations(id, name)')
+      .select('id, title, commitment_type, due_date, priority_score, org_id')
       .in('status', ['pending', 'in_progress'])
       .eq('owner', 'josh')
       .lt('due_date', todayStr)
@@ -40,7 +49,7 @@ export async function GET(request: Request) {
     // 3. Due today (Josh owns)
     const { data: dueTodayCommitments } = await supabase
       .from('commitments')
-      .select('id, title, commitment_type, due_date, priority_score, organizations(id, name)')
+      .select('id, title, commitment_type, due_date, priority_score, org_id')
       .in('status', ['pending', 'in_progress'])
       .eq('owner', 'josh')
       .eq('due_date', todayStr)
@@ -49,7 +58,7 @@ export async function GET(request: Request) {
     // 4. Items others owe Josh (waiting on others)
     const { data: waitingOnOthers } = await supabase
       .from('commitments')
-      .select('id, title, commitment_type, due_date, other_party, created_at, organizations(id, name)')
+      .select('id, title, commitment_type, due_date, other_party, created_at, org_id')
       .eq('status', 'waiting')
       .neq('owner', 'josh')
       .order('created_at', { ascending: true })
@@ -58,7 +67,7 @@ export async function GET(request: Request) {
     // 5. Recently completed (last 24 hours)
     const { data: recentlyCompleted } = await supabase
       .from('commitments')
-      .select('id, title, commitment_type, completed_at, organizations(id, name)')
+      .select('id, title, commitment_type, completed_at, org_id')
       .eq('status', 'completed')
       .gte('completed_at', twentyFourHoursAgo)
       .order('completed_at', { ascending: false });
@@ -66,7 +75,7 @@ export async function GET(request: Request) {
     // 6. Top priorities (Josh owns, not overdue, not due today)
     const { data: topPriorities } = await supabase
       .from('commitments')
-      .select('id, title, commitment_type, due_date, priority_score, organizations(id, name)')
+      .select('id, title, commitment_type, due_date, priority_score, org_id')
       .in('status', ['pending', 'in_progress'])
       .eq('owner', 'josh')
       .or(`due_date.gt.${todayStr},due_date.is.null`)
@@ -75,7 +84,7 @@ export async function GET(request: Request) {
 
     // 7. Emails needing reply
     const { data: replyEmails } = await supabase
-      .from('review_emails')
+      .from('emails')
       .select('id, sender, subject, received_at, ai_extraction')
       .eq('is_processed', true)
       .limit(30);
@@ -113,7 +122,7 @@ export async function GET(request: Request) {
 
       // Find last email
       const { data: lastEmail } = await supabase
-        .from('review_emails')
+        .from('emails')
         .select('received_at')
         .eq('org_id', org.id)
         .order('received_at', { ascending: false })
@@ -219,23 +228,50 @@ export async function GET(request: Request) {
       (t: ThemeAlertItem) => t.severity === 'urgent' || t.severity === 'pattern'
     );
 
+    // --- Build org name map for all commitment/event org_ids ---
+    const allOrgIds = new Set<string>();
+    for (const list of [events, weekAheadEvents, overdueCommitments, dueTodayCommitments, waitingOnOthers, recentlyCompleted, topPriorities]) {
+      for (const item of list || []) {
+        if (item.org_id) allOrgIds.add(item.org_id as string);
+      }
+    }
+    let briefingOrgMap = new Map<string, string>();
+    if (allOrgIds.size > 0) {
+      const { data: briefingOrgs } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .in('id', [...allOrgIds]);
+      briefingOrgMap = new Map((briefingOrgs || []).map((o: { id: string; name: string }) => [o.id, o.name]));
+    }
+
     // --- Format all data as text for Claude ---
 
-    const formatOrg = (c: { organizations?: unknown }) => {
-      const org = c.organizations as { id: string; name: string } | null;
-      return org ? ` (${org.name})` : '';
+    const formatOrg = (c: { org_id?: string | null }) => {
+      const name = c.org_id ? briefingOrgMap.get(c.org_id) : null;
+      return name ? ` (${name})` : '';
     };
 
     const eventsText = (events || []).map((e) => {
-      const org = e.organizations as unknown as { id: string; name: string } | null;
+      const orgName = e.org_id ? briefingOrgMap.get(e.org_id as string) : null;
       const analysis = e.ai_analysis as { prep_notes?: string; event_type?: string } | null;
       const start = new Date(e.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
       const end = new Date(e.end_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
-      const prepContext = org && e.org_id && meetingPrepData[e.org_id]
-        ? `\n  Open items for ${org.name}: ${meetingPrepData[e.org_id].commitments.join('; ') || 'None'}\n  Last contact: ${meetingPrepData[e.org_id].contactInfo.days} days ago via ${meetingPrepData[e.org_id].contactInfo.lastType}`
+      const prepContext = e.org_id && meetingPrepData[e.org_id as string]
+        ? `\n  Open items for ${orgName}: ${meetingPrepData[e.org_id as string].commitments.join('; ') || 'None'}\n  Last contact: ${meetingPrepData[e.org_id as string].contactInfo.days} days ago via ${meetingPrepData[e.org_id as string].contactInfo.lastType}`
         : '';
-      return `- ${start}-${end}: ${e.subject || 'No subject'}${org ? ` (${org.name})` : ''}${e.location ? ` @ ${e.location}` : ''}${analysis?.prep_notes ? ` | Prep: ${analysis.prep_notes}` : ''}${analysis?.event_type ? ` | Type: ${analysis.event_type}` : ''}${prepContext}`;
+      return `- ${start}-${end}: ${e.subject || 'No subject'}${orgName ? ` (${orgName})` : ''}${e.location ? ` @ ${e.location}` : ''}${analysis?.prep_notes ? ` | Prep: ${analysis.prep_notes}` : ''}${analysis?.event_type ? ` | Type: ${analysis.event_type}` : ''}${prepContext}`;
     }).join('\n') || 'No events scheduled today.';
+
+    // Week ahead lookahead
+    const weekAheadText = (weekAheadEvents || []).map((e) => {
+      const orgName = e.org_id ? briefingOrgMap.get(e.org_id as string) : null;
+      const analysis = e.ai_analysis as { event_type?: string; importance?: string } | null;
+      const start = new Date(e.start_time);
+      const dayStr = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+      const timeStr = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+      const importance = analysis?.importance === 'high' ? ' [HIGH PRIORITY]' : '';
+      return `- ${dayStr} ${timeStr}: ${e.subject || 'Untitled'}${orgName ? ` (${orgName})` : ''}${analysis?.event_type ? ` [${analysis.event_type}]` : ''}${importance}`;
+    }).join('\n') || 'Nothing on the horizon.';
 
     const overdueText = (overdueCommitments || []).map((c) => {
       const daysOverdue = Math.floor((today.getTime() - new Date(c.due_date!).getTime()) / 86400000);
@@ -326,6 +362,9 @@ ${alertsText}
 EMAILS NEEDING REPLY (${needsReply.length}):
 ${replyText}
 
+WEEK AHEAD (next 7 days, ${(weekAheadEvents || []).length} events):
+${weekAheadText}
+
 CLIENT ATTENTION DATA (all active orgs):
 ${attentionDataText}
 ${activeThemeAlerts.length > 0 ? `
@@ -362,9 +401,11 @@ Structure the email with these exact sections in this order:
 
 7. **Theme Alerts** (ONLY if CROSS-CLIENT THEME ALERTS data is provided above): Show urgent and pattern-level themes that span multiple clients. For each, show the theme name, severity badge (red for urgent, amber for pattern), which clients are affected, and the recommended action. If a coaching opportunity exists, highlight it. Keep this section compact — 2-3 alerts max.
 
-8. **Replies Needed**: Emails awaiting response. Sort by urgency (high first). Show sender and subject. Only show if there are any.
+8. **Week Ahead**: Compact preview of the next 7 days — group by day, show event name + client. Flag high-priority events (client coaching sessions, PI sessions, workshops) with a colored badge. This helps Josh mentally prepare and ensures nothing sneaks up on him. Show commitments due this week alongside the calendar. Only show if there are upcoming events.
 
-9. **Footer**: Brief, grounding sign-off. One line. Not motivational-poster cheesy — more like a thoughtful colleague. Examples of the right tone: "You've got a solid handle on things." or "Big day ahead — start with the one thing." Keep it contextual to the actual data above.
+9. **Replies Needed**: Emails awaiting response. Sort by urgency (high first). Show sender and subject. Only show if there are any.
+
+10. **Footer**: Brief, grounding sign-off. One line. Not motivational-poster cheesy — more like a thoughtful colleague. Examples of the right tone: "You've got a solid handle on things." or "Big day ahead — start with the one thing." Keep it contextual to the actual data above.
 
 Important rules:
 - If a section has no data, SKIP IT ENTIRELY (no empty state messages except for schedule)

@@ -1074,30 +1074,53 @@ ${dueToday.length > 0 ? `\nDUE TODAY (${dueToday.length}): ${dueToday.map((c) =>
     // Fetch calendar events with AI analysis (prep notes, event type)
     {
       const now = new Date();
-      const weekEnd = new Date(now);
-      weekEnd.setDate(weekEnd.getDate() + 7);
+      const twoWeeksOut = new Date(now);
+      twoWeeksOut.setDate(twoWeeksOut.getDate() + 14);
 
       const { data: events } = await supabase
         .from('calendar_events')
-        .select('subject, start_time, end_time, location, ai_analysis, organizations(name)')
+        .select('subject, start_time, end_time, location, ai_analysis, org_id')
         .gte('start_time', now.toISOString())
-        .lte('start_time', weekEnd.toISOString())
+        .lte('start_time', twoWeeksOut.toISOString())
         .order('start_time', { ascending: true })
-        .limit(15);
+        .limit(30);
 
       if (events && events.length > 0) {
-        contextParts.push(`UPCOMING CALENDAR (next 7 days):
-${events
-  .map((e) => {
-    const orgArr = e.organizations as unknown as { name: string }[] | null;
-    const orgName = orgArr?.[0]?.name;
-    const start = new Date(e.start_time);
-    const aiData = e.ai_analysis as Record<string, unknown> | null;
-    const prepNotes = aiData?.prep_notes ? ` | Prep: ${aiData.prep_notes}` : '';
-    const eventType = aiData?.event_type ? ` [${aiData.event_type}]` : '';
-    return `- ${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}: ${e.subject || 'Untitled'}${eventType}${orgName ? ' (' + orgName + ')' : ''}${e.location ? ' @ ' + e.location : ''}${prepNotes}`;
-  })
-  .join('\n')}`);
+        // Fetch org names for events
+        const eventOrgIds = [...new Set(events.map((e) => e.org_id).filter(Boolean))];
+        let eventOrgMap = new Map<string, string>();
+        if (eventOrgIds.length > 0) {
+          const { data: eventOrgs } = await supabase
+            .from('organizations')
+            .select('id, name')
+            .in('id', eventOrgIds);
+          eventOrgMap = new Map((eventOrgs || []).map((o: { id: string; name: string }) => [o.id, o.name]));
+        }
+
+        // Split into this week and next week
+        const oneWeekOut = new Date(now);
+        oneWeekOut.setDate(oneWeekOut.getDate() + 7);
+        const thisWeek = events.filter((e) => new Date(e.start_time) < oneWeekOut);
+        const nextWeek = events.filter((e) => new Date(e.start_time) >= oneWeekOut);
+
+        const formatEvent = (e: typeof events[0]) => {
+          const orgName = e.org_id ? eventOrgMap.get(e.org_id as string) : null;
+          const start = new Date(e.start_time);
+          const aiData = e.ai_analysis as Record<string, unknown> | null;
+          const prepNotes = aiData?.prep_notes ? ` | Prep: ${aiData.prep_notes}` : '';
+          const eventType = aiData?.event_type ? ` [${aiData.event_type}]` : '';
+          const importance = aiData?.importance === 'high' ? ' ⚡HIGH' : '';
+          return `- ${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}: ${e.subject || 'Untitled'}${eventType}${importance}${orgName ? ' (' + orgName + ')' : ''}${e.location ? ' @ ' + e.location : ''}${prepNotes}`;
+        };
+
+        if (thisWeek.length > 0) {
+          contextParts.push(`CALENDAR — THIS WEEK (${thisWeek.length} events):
+${thisWeek.map(formatEvent).join('\n')}`);
+        }
+        if (nextWeek.length > 0) {
+          contextParts.push(`CALENDAR — NEXT WEEK (${nextWeek.length} events):
+${nextWeek.map(formatEvent).join('\n')}`);
+        }
       }
     }
 
