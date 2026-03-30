@@ -1599,6 +1599,7 @@ CRITICAL RULES:
     const claudeMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     const trimmedHistory = history.slice(-10);
     for (const msg of trimmedHistory) {
+      if (!msg.content || !msg.role) continue;
       // Ensure alternating roles — skip if same role as previous
       const lastRole = claudeMessages.length > 0 ? claudeMessages[claudeMessages.length - 1].role : null;
       if (msg.role === lastRole) continue;
@@ -1608,20 +1609,32 @@ CRITICAL RULES:
     while (claudeMessages.length > 0 && claudeMessages[0].role !== 'user') {
       claudeMessages.shift();
     }
+    // Remove trailing user message if exists (we'll add the new one)
+    while (claudeMessages.length > 0 && claudeMessages[claudeMessages.length - 1].role === 'user') {
+      claudeMessages.pop();
+    }
     claudeMessages.push({ role: 'user', content: message });
 
-    // Log context size for debugging
+    // Log context size and model for debugging
     const systemLen = systemPrompt.length;
     const msgLen = claudeMessages.reduce((s, m) => s + m.content.length, 0);
-    console.log(`Chat context: system=${systemLen} chars, messages=${msgLen} chars (${claudeMessages.length} msgs)`);
+    const roles = claudeMessages.map((m) => m.role[0]).join('');
+    console.log(`Chat: model=${AI_MODEL}, system=${systemLen}c, msgs=${msgLen}c (${claudeMessages.length} msgs, roles=${roles})`);
 
     const client = new Anthropic();
-    const response = await client.messages.create({
-      model: AI_MODEL,
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: claudeMessages,
-    });
+    let response;
+    try {
+      response = await client.messages.create({
+        model: AI_MODEL,
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: claudeMessages,
+      });
+    } catch (apiErr) {
+      const ae = apiErr as { status?: number; message?: string; error?: { type?: string; message?: string } };
+      console.error(`Anthropic API error: status=${ae.status}, type=${ae.error?.type}, msg=${ae.error?.message || ae.message}`);
+      throw apiErr;
+    }
 
     const textContent = response.content.find((c) => c.type === 'text');
     const rawReply = textContent && textContent.type === 'text' ? textContent.text : 'I was unable to generate a response.';

@@ -254,7 +254,10 @@ export function CommandHubChat({ isOpen, onClose }: CommandHubChatProps) {
         }),
       });
 
-      if (!res.ok) throw new Error('Chat request failed');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ details: 'Unknown error' }));
+        throw new Error(errBody.details || 'Chat request failed');
+      }
 
       // Check if streaming response
       const contentType = res.headers.get('content-type') || '';
@@ -290,7 +293,7 @@ export function CommandHubChat({ isOpen, onClose }: CommandHubChatProps) {
       setStreamingContent('');
       setMessages([
         ...updatedMessages,
-        { role: 'assistant', content: 'Sorry, I ran into an error. Try again.' },
+        { role: 'assistant', content: `Sorry, I ran into an error: ${err instanceof Error ? err.message : 'Unknown error'}` },
       ]);
     } finally {
       setLoading(false);
