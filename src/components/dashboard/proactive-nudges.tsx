@@ -100,7 +100,7 @@ export function ProactiveNudges() {
       ) : (
         <div className="space-y-2">
           {nudges.map((nudge) => {
-            const config = urgencyConfig[nudge.urgency];
+            const config = urgencyConfig[nudge.urgency as keyof typeof urgencyConfig] || urgencyConfig.medium;
             const Icon = iconMap[nudge.icon] || AlertTriangle;
 
             return (

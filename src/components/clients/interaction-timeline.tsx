@@ -85,7 +85,7 @@ export function InteractionTimeline({ events, days = 90 }: InteractionTimelinePr
         {validEvents.map((event, i) => {
           const dayOffset = differenceInDays(new Date(event.date), startDate);
           const pos = (dayOffset / days) * width;
-          const cfg = typeConfig[event.type];
+          const cfg = typeConfig[event.type as keyof typeof typeConfig] || typeConfig.transcript;
 
           return (
             <div
@@ -124,7 +124,7 @@ export function InteractionTimeline({ events, days = 90 }: InteractionTimelinePr
             <p className="text-xs font-medium">{hoveredEvent.title}</p>
             <p className="text-[10px] text-muted">
               {format(new Date(hoveredEvent.date), 'MMM d, yyyy')} &middot;{' '}
-              {typeConfig[hoveredEvent.type].label}
+              {(typeConfig[hoveredEvent.type as keyof typeof typeConfig] || typeConfig.transcript).label}
             </p>
           </div>
         )}

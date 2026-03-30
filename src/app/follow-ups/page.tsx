@@ -135,7 +135,7 @@ export default function FollowUpQueuePage() {
         ) : (
           <div className="space-y-3">
             {visibleFollowUps.map((item) => {
-              const config = urgencyConfig[item.urgency];
+              const config = urgencyConfig[item.urgency as keyof typeof urgencyConfig] || urgencyConfig.medium;
               const isExpanded = expandedId === item.org_id;
 
               return (
