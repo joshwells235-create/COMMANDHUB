@@ -177,6 +177,8 @@ export default function FocusView() {
               commitment={nextUp}
               onComplete={async (id) => { await completeCommitment(id); }}
               onSnooze={async (id, date) => { await snoozeCommitment(id, date); }}
+              onCancel={async (id) => { await cancelCommitment(id); }}
+              onUpdate={async (id, updates) => { await updateCommitment(id, updates); }}
             />
           </div>
 
@@ -281,6 +283,8 @@ export default function FocusView() {
                 commitment={nextUp}
                 onComplete={async (id) => { await completeCommitment(id); }}
                 onSnooze={async (id, date) => { await snoozeCommitment(id, date); }}
+                onCancel={async (id) => { await cancelCommitment(id); }}
+                onUpdate={async (id, updates) => { await updateCommitment(id, updates); }}
               />
             </div>
 
