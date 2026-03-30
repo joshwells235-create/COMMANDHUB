@@ -104,6 +104,16 @@ Participants: ${participants}${speakerMapping}
 TRANSCRIPT:
 ${safeText}
 
+COMMITMENT OWNERSHIP RULES — CRITICAL:
+When extracting commitments, pay close attention to WHO is taking the action:
+- owner="josh" means JOSH needs to take action (Josh promised something, Josh was asked to do something, Josh needs to follow up)
+- owner="other" means SOMEONE ELSE promised to do something and Josh should track it as a waiting_on item
+- If the CLIENT says "I'll do X", "I will send that", "Let me handle that", "I'll get back to you" → owner="other", commitment_type="waiting_on", other_party=their name
+- If JOSH says "I'll send you X", "I will follow up", "Let me prepare that" → owner="josh", commitment_type="promise_made" or "deliverable"
+- If Josh ASKS the client to do something ("Can you send me...", "I need you to...") → owner="other", commitment_type="waiting_on"
+- If the client ASKS Josh to do something → owner="josh", commitment_type="ask_received"
+- Do NOT assign owner="josh" when someone else is the one who needs to act. This is the most common mistake.
+
 Analyze and return JSON only (no markdown code blocks):
 {
   "summary": "3-5 sentence executive summary of the session. What was discussed, what shifted, what matters for next time.",
@@ -165,6 +175,14 @@ Participants: ${participants}${personalSpeakerMapping}
 
 TRANSCRIPT:
 ${safeText}
+
+COMMITMENT OWNERSHIP RULES — CRITICAL:
+When extracting commitments, pay close attention to WHO is taking the action:
+- owner="josh" means JOSH needs to take action (Josh promised something, Josh needs to follow up)
+- owner="other" means SOMEONE ELSE promised to do something and Josh should track it as a waiting_on item
+- If the other person says "I'll do X", "I will send that", "We'll take care of it" → owner="other", commitment_type="waiting_on", other_party=their name
+- If JOSH says "I'll handle that", "I will call them", "Let me look into it" → owner="josh", commitment_type="promise_made" or "follow_up"
+- Do NOT assign owner="josh" when someone else is the one who needs to act.
 
 Analyze and return JSON only (no markdown code blocks):
 {

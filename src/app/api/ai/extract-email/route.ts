@@ -118,14 +118,16 @@ For non-noise emails, extract:
 
 COMMITMENTS — any action items, promises, asks, or follow-ups:
 ${isSent ? `Since Josh SENT this email:
-1. PROMISES JOSH MADE - things Josh said he would do ("I'll send that over", "I will follow up")
-2. THINGS JOSH DELIVERED - did Josh send a document, answer a question, or complete a task?
-3. NEW FOLLOW-UPS CREATED - did Josh's email create new expectations for a response or next step?
-4. WAITING_ON ITEMS - is Josh now waiting for someone to respond or act?` : `Since Josh RECEIVED this email:
-1. PROMISES JOSH MADE - things Josh said he would do in the thread
-2. ASKS OF JOSH - direct requests made to Josh
-3. PROMISES OTHERS MADE TO JOSH - things Josh should track as waiting_on
-4. IMPLICIT FOLLOW-UPS - proposals need follow-up, questions need responses, meetings need prep`}
+1. PROMISES JOSH MADE - things Josh said he would do ("I'll send that over", "I will follow up") → owner="josh", commitment_type="promise_made"
+2. THINGS JOSH DELIVERED - did Josh send a document, answer a question, or complete a task? → owner="josh", commitment_type="deliverable"
+3. NEW FOLLOW-UPS CREATED - did Josh's email create new expectations for a response or next step? → owner="josh", commitment_type="follow_up"
+4. WAITING_ON ITEMS - is Josh now waiting for someone to respond or act? → owner="other", commitment_type="waiting_on"` : `Since Josh RECEIVED this email:
+1. ASKS OF JOSH - direct requests made to Josh → owner="josh", commitment_type="ask_received"
+2. PROMISES OTHERS MADE TO JOSH - things the sender said THEY will do ("I'll send that", "We'll take care of it", "I will follow up") → owner="other", commitment_type="waiting_on"
+3. IMPLICIT FOLLOW-UPS - proposals need follow-up, questions need responses, meetings need prep → owner="josh", commitment_type="follow_up"
+4. INFORMATION FOR JOSH - FYI items that don't need action → skip, do NOT create a commitment`}
+
+CRITICAL: When someone OTHER than Josh promises to do something, set owner="other" and commitment_type="waiting_on". Do NOT put these on Josh's plate.
 ${isSent ? `
 RESOLVED COMMITMENTS — compare this email against the PENDING COMMITMENTS list above. If Josh's sent email appears to fulfill or address any pending commitment, list the commitment IDs that should be marked complete or in-progress.` : ''}
 
