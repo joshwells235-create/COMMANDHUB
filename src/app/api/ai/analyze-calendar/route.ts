@@ -73,15 +73,21 @@ Calendar Event:
 Determine:
 1. Which organization does this event relate to? Match against the known list. If no match, set to null.
 2. What type of event is this? Options: coaching_session, workshop, pi_session, client_meeting, internal_leadshift, vistage, personal, other
-3. What should Josh prepare or review before this event? Be specific and concise.
-4. Are there any implied commitments? List as potential items with suggested due dates.
+3. What should Josh prepare or review before this event? Be specific and actionable — include what to review, what materials to bring, what topics to be ready to discuss.
+4. Are there any PREPARATION commitments? Only include items where Josh needs to DO something before or after the meeting — like reviewing notes, preparing materials, sending a follow-up, or creating a deliverable.
+
+CRITICAL: Do NOT create commitments for simply attending or showing up to the meeting. The calendar event itself tracks attendance. Only create commitments for actual preparation work, deliverables, or follow-up actions. Examples:
+- GOOD: "Review Q1 results before meeting", "Prepare coaching session outline", "Send follow-up notes after session"
+- BAD: "Attend meeting with X", "Join call with Y", "Be at workshop", "Show up to session"
+
+For prep_notes, give Josh specific, helpful preparation guidance — what to review, what questions to ask, what to bring up, what context to remember. This is his cheat sheet going into the meeting.
 
 Return JSON only:
 {
   "org_match": "org_name or null",
   "org_match_confidence": "high|medium|low",
   "event_type": "...",
-  "prep_notes": "What Josh should prepare",
+  "prep_notes": "Specific preparation guidance for Josh — what to review, topics to raise, context to remember",
   "implied_commitments": [
     {
       "title": "...",
