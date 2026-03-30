@@ -1,5 +1,38 @@
 import { createServerClient } from '@/lib/supabase/server';
 
+/**
+ * Convert a naive datetime string from Microsoft Graph (Eastern Time, no offset)
+ * into a proper ISO string with UTC offset.
+ * Graph returns e.g. "2026-03-30T14:00:00.0000000" when Prefer header is Eastern.
+ * We need to tag it with the correct ET offset so consumers interpret it correctly.
+ */
+function easternToISO(naiveDatetime: string | undefined): string | undefined {
+  if (!naiveDatetime) return undefined;
+  // If it already has a timezone offset (Z, +, -), return as-is
+  if (/[Z+-]\d{0,4}$/.test(naiveDatetime.replace(/\.0+$/, ''))) return naiveDatetime;
+  // Determine if the date falls in EDT or EST
+  // EDT: second Sunday in March to first Sunday in November
+  const d = new Date(naiveDatetime); // parsed as UTC, but we just need month/day
+  const month = d.getUTCMonth(); // 0-indexed
+  const day = d.getUTCDate();
+  const dayOfWeek = d.getUTCDay(); // 0=Sun
+  let isEDT = false;
+  if (month > 2 && month < 10) {
+    isEDT = true; // Apr-Oct always EDT
+  } else if (month === 2) {
+    // March: EDT starts second Sunday
+    const secondSunday = 14 - new Date(d.getUTCFullYear(), 2, 1).getDay();
+    isEDT = day > secondSunday || (day === secondSunday && dayOfWeek === 0);
+  } else if (month === 10) {
+    // November: EST starts first Sunday
+    const firstSunday = 7 - new Date(d.getUTCFullYear(), 10, 1).getDay();
+    isEDT = day < firstSunday;
+  }
+  // Append the correct offset: EDT = -04:00, EST = -05:00
+  const clean = naiveDatetime.replace(/\.0+$/, '');
+  return clean + (isEDT ? '-04:00' : '-05:00');
+}
+
 const TENANT = process.env.AZURE_TENANT_ID || 'common';
 const AUTH_ENDPOINT = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/authorize`;
 const TOKEN_ENDPOINT = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`;
@@ -342,8 +375,8 @@ export async function syncCalendar() {
           ms_event_id: event.id as string,
           subject: (event.subject as string) ?? null,
           body_preview: (event.bodyPreview as string) ?? null,
-          start_time: start?.dateTime,
-          end_time: end?.dateTime,
+          start_time: easternToISO(start?.dateTime),
+          end_time: easternToISO(end?.dateTime),
           location: location?.displayName ?? null,
           attendees: event.attendees ?? null,
           is_processed: false,

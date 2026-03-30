@@ -73,7 +73,12 @@ export function parseDateFromText(text: string): Date | null {
 }
 
 export function formatEventTime(dateStr: string): string {
-  return format(new Date(dateStr), 'h:mma').toLowerCase();
+  return new Date(dateStr).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/New_York',
+    hour12: true,
+  }).toLowerCase();
 }
 
 export function cn(...classes: (string | boolean | undefined | null)[]): string {
