@@ -15,8 +15,13 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  Sparkles,
+  Mic,
+  Target,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase/client';
 
 interface VoiceProfile {
   id: string;
@@ -82,6 +87,51 @@ interface PriorityInsights {
   modifier_rules?: Array<{ rule: string; modifier: number }>;
 }
 
+interface JoshProfile {
+  id: string;
+  profile_type: string;
+  data: Record<string, unknown>;
+  updated_at: string;
+}
+
+const PROFILE_CONFIG: Record<string, {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  refreshEndpoint: string | null;
+  refreshMethod: string;
+}> = {
+  coaching_methodology: {
+    label: 'Coaching Methodology',
+    icon: BookOpen,
+    refreshEndpoint: '/api/ai/methodology',
+    refreshMethod: 'POST',
+  },
+  writing_style: {
+    label: 'Writing Style',
+    icon: Sparkles,
+    refreshEndpoint: '/api/ai/voice-profile',
+    refreshMethod: 'POST',
+  },
+  coaching_voice: {
+    label: 'Voice Profile',
+    icon: Mic,
+    refreshEndpoint: '/api/ai/voice-profile',
+    refreshMethod: 'POST',
+  },
+  priority_patterns: {
+    label: 'Priority Patterns',
+    icon: Target,
+    refreshEndpoint: null,
+    refreshMethod: 'POST',
+  },
+  cross_client_patterns: {
+    label: 'Cross-Client Patterns',
+    icon: Brain,
+    refreshEndpoint: '/api/ai/cross-client',
+    refreshMethod: 'POST',
+  },
+};
+
 export default function SettingsPage() {
   // Voice Profile state
   const [voiceProfile, setVoiceProfile] = useState<VoiceProfile | null>(null);
@@ -106,12 +156,19 @@ export default function SettingsPage() {
   const [msConnected, setMsConnected] = useState(false);
   const [msLoading, setMsLoading] = useState(true);
 
+  // AI Intelligence state
+  const [profiles, setProfiles] = useState<JoshProfile[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(true);
+  const [refreshingProfile, setRefreshingProfile] = useState<string | null>(null);
+  const [expandedProfiles, setExpandedProfiles] = useState<Record<string, boolean>>({});
+
   // Fetch voice profile on mount
   useEffect(() => {
     fetchVoiceProfile();
     fetchMethodology();
     fetchPriorityInsights();
     checkMicrosoftConnection();
+    fetchProfiles();
   }, []);
 
   async function fetchVoiceProfile() {
@@ -244,6 +301,103 @@ export default function SettingsPage() {
     } finally {
       setMsLoading(false);
     }
+  }
+
+  async function fetchProfiles() {
+    setProfilesLoading(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('josh_profile')
+        .select('*');
+      if (error) throw error;
+      setProfiles(data || []);
+    } catch (err) {
+      console.error('Failed to fetch profiles:', err);
+    } finally {
+      setProfilesLoading(false);
+    }
+  }
+
+  async function refreshProfile(profileType: string) {
+    const config = PROFILE_CONFIG[profileType];
+    if (!config?.refreshEndpoint) {
+      toast.error('This profile is auto-updated by the system.');
+      return;
+    }
+    setRefreshingProfile(profileType);
+    try {
+      const res = await fetch(config.refreshEndpoint, { method: config.refreshMethod });
+      if (!res.ok) throw new Error('Failed to refresh profile');
+      toast.success(`${config.label} refreshed successfully`);
+      await fetchProfiles();
+    } catch (err) {
+      console.error(`Failed to refresh ${profileType}:`, err);
+      toast.error(`Failed to refresh ${config.label}. Please try again.`);
+    } finally {
+      setRefreshingProfile(null);
+    }
+  }
+
+  function toggleProfile(profileType: string) {
+    setExpandedProfiles((prev) => ({ ...prev, [profileType]: !prev[profileType] }));
+  }
+
+  function renderJsonValue(value: unknown, depth = 0): React.ReactNode {
+    if (value === null || value === undefined) return null;
+
+    if (typeof value === 'string') {
+      return <p className="text-sm text-foreground">{value}</p>;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return <span className="text-sm text-foreground font-mono">{String(value)}</span>;
+    }
+
+    if (Array.isArray(value)) {
+      if (value.length === 0) return <span className="text-xs text-muted">Empty</span>;
+      // If array of strings, show as bullet list
+      if (value.every((v) => typeof v === 'string')) {
+        return (
+          <ul className="space-y-1">
+            {value.map((item, i) => (
+              <li key={i} className="text-sm text-foreground flex items-start gap-2">
+                <span className="text-primary mt-0.5 flex-shrink-0">-</span>
+                {item}
+              </li>
+            ))}
+          </ul>
+        );
+      }
+      // Array of objects
+      return (
+        <div className="space-y-2">
+          {value.map((item, i) => (
+            <div key={i} className="bg-card rounded-lg border border-border/30 p-3">
+              {renderJsonValue(item, depth + 1)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (typeof value === 'object') {
+      const entries = Object.entries(value as Record<string, unknown>);
+      return (
+        <div className={depth > 0 ? 'space-y-2' : 'space-y-3'}>
+          {entries.map(([key, val]) => (
+            <div key={key}>
+              <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">
+                {key.replace(/_/g, ' ')}
+              </h4>
+              {renderJsonValue(val, depth + 1)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    return <span className="text-sm text-foreground">{String(value)}</span>;
   }
 
   return (
@@ -838,6 +992,102 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
+        </section>
+
+        {/* AI Intelligence Section */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-bold tracking-tight text-gradient">AI INTELLIGENCE</h2>
+          </div>
+
+          {profilesLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="bg-card/50 border border-border/50 rounded-xl p-5 animate-pulse"
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 bg-primary/10 rounded-lg" />
+                    <div className="h-4 w-40 bg-primary/10 rounded" />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="h-3 w-full bg-primary/5 rounded" />
+                    <div className="h-3 w-2/3 bg-primary/5 rounded" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {Object.entries(PROFILE_CONFIG).map(([type, config]) => {
+                const profile = profiles.find((p) => p.profile_type === type);
+                const IconComponent = config.icon;
+                const isExpanded = expandedProfiles[type];
+                const isRefreshing = refreshingProfile === type;
+
+                return (
+                  <div
+                    key={type}
+                    className="bg-card/50 border border-border/50 rounded-xl overflow-hidden"
+                  >
+                    <div className="px-5 py-4 flex items-center justify-between">
+                      <button
+                        onClick={() => profile && toggleProfile(type)}
+                        className="flex items-center gap-3 flex-1 text-left"
+                      >
+                        <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <IconComponent className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold text-foreground">{config.label}</h3>
+                          {profile ? (
+                            <p className="text-xs text-muted">
+                              Updated {format(new Date(profile.updated_at), 'MMM d, yyyy h:mma')}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-warning">Not yet generated</p>
+                          )}
+                        </div>
+                        {profile && (
+                          isExpanded ? (
+                            <ChevronDown className="w-4 h-4 text-muted flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-muted flex-shrink-0" />
+                          )
+                        )}
+                      </button>
+                      {config.refreshEndpoint && (
+                        <button
+                          onClick={() => refreshProfile(type)}
+                          disabled={isRefreshing}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/20 text-primary rounded-lg text-xs font-medium hover:bg-primary/30 transition-colors disabled:opacity-50 ml-3 flex-shrink-0"
+                        >
+                          {isRefreshing ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          )}
+                          {profile ? 'Refresh' : 'Generate'}
+                        </button>
+                      )}
+                      {!config.refreshEndpoint && (
+                        <span className="text-xs text-muted ml-3 flex-shrink-0">Auto-updated</span>
+                      )}
+                    </div>
+                    {profile && isExpanded && (
+                      <div className="px-5 pb-4">
+                        <div className="bg-background rounded-lg p-4">
+                          {renderJsonValue(profile.data)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
       </main>
     </div>

@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { Check, Clock, X, AlertTriangle, Pencil, Save, Loader2, CheckCircle2, Target, GripVertical } from 'lucide-react';
-import type { Commitment, CommitmentType } from '@/types/database';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Check, Clock, X, AlertTriangle, Pencil, Save, Loader2, CheckCircle2, Target, GripVertical, FileText, Mail, Calendar, History } from 'lucide-react';
+import type { Commitment, CommitmentType, CommitmentActivity } from '@/types/database';
 import { getDueLabel, getCommitmentTypeLabel, getEscalationIndicator, cn } from '@/lib/utils';
 import { SnoozePicker } from '@/components/ui/snooze-picker';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, differenceInDays } from 'date-fns';
 import {
   DndContext,
   closestCenter,
@@ -69,6 +69,186 @@ function SortableWrapper({ id, children, disabled }: { id: string; children: Rea
   );
 }
 
+function SourceBadge({ sourceType }: { sourceType: string | null }) {
+  if (!sourceType) return null;
+
+  const config: Record<string, { icon: typeof FileText; label: string; className: string }> = {
+    transcript: { icon: FileText, label: 'Transcript', className: 'text-indigo-400 bg-indigo-400/10' },
+    email: { icon: Mail, label: 'Email', className: 'text-blue-400 bg-blue-400/10' },
+    calendar: { icon: Calendar, label: 'Calendar', className: 'text-amber-400 bg-amber-400/10' },
+  };
+
+  const badge = config[sourceType];
+  if (!badge) return null;
+
+  const Icon = badge.icon;
+  return (
+    <span className={cn('inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded', badge.className)}>
+      <Icon className="w-2.5 h-2.5" />
+      {badge.label}
+    </span>
+  );
+}
+
+function buildPriorityTitle(c: Commitment): string {
+  const factors: string[] = [];
+
+  if (c.due_date) {
+    const now = new Date();
+    const due = new Date(c.due_date);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+    const diff = differenceInDays(dueDay, today);
+
+    if (diff < 0) {
+      factors.push(`Overdue by ${Math.abs(diff)} day${Math.abs(diff) !== 1 ? 's' : ''} (+${Math.min(Math.abs(diff) * 5, 30)} points)`);
+    } else if (diff === 0) {
+      factors.push('Due today (+15 points)');
+    } else if (diff === 1) {
+      factors.push('Due tomorrow (+10 points)');
+    }
+  }
+
+  if (c.commitment_type === 'promise_made') {
+    factors.push('Promise made (+10)');
+  }
+
+  if (c.source_type === 'email') {
+    factors.push('From email');
+  } else if (c.source_type === 'calendar') {
+    factors.push('From calendar prep');
+  }
+
+  if (factors.length === 0) {
+    return `Priority: ${c.priority_score}`;
+  }
+
+  return `Priority: ${c.priority_score}\n${factors.join('\n')}`;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  created: 'Created',
+  completed: 'Completed',
+  snoozed: 'Snoozed',
+  unsnoozed: 'Unsnoozed',
+  escalated: 'Escalated',
+  'auto-resolved': 'Auto-resolved',
+  updated: 'Updated',
+  cancelled: 'Cancelled',
+  reopened: 'Reopened',
+  priority_changed: 'Priority changed',
+};
+
+const ACTION_COLORS: Record<string, string> = {
+  created: 'bg-primary/60',
+  completed: 'bg-success/60',
+  snoozed: 'bg-warning/60',
+  unsnoozed: 'bg-warning/60',
+  escalated: 'bg-danger/60',
+  'auto-resolved': 'bg-success/60',
+  cancelled: 'bg-danger/60',
+  updated: 'bg-indigo-400/60',
+  reopened: 'bg-primary/60',
+  priority_changed: 'bg-indigo-400/60',
+};
+
+function formatDetails(details: Record<string, unknown> | null): string | null {
+  if (!details) return null;
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(details)) {
+    if (value !== null && value !== undefined && value !== '') {
+      const label = key.replace(/_/g, ' ');
+      parts.push(`${label}: ${typeof value === 'string' ? value.split('T')[0] : String(value)}`);
+    }
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function ActivityHistory({ commitmentId, activityCache }: { commitmentId: string; activityCache: React.RefObject<Map<string, CommitmentActivity[]>> }) {
+  const [activities, setActivities] = useState<CommitmentActivity[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const fetchActivities = useCallback(async () => {
+    // Check cache first
+    const cached = activityCache.current?.get(commitmentId);
+    if (cached) {
+      setActivities(cached);
+      return;
+    }
+
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await fetch(`/api/activity?commitment_id=${commitmentId}&limit=20`);
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data: CommitmentActivity[] = await res.json();
+      activityCache.current?.set(commitmentId, data);
+      setActivities(data);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [commitmentId, activityCache]);
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchActivities();
+  }, [fetchActivities]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-2 text-xs text-muted">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Loading history...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-xs text-danger/70 py-2">Failed to load activity history.</div>
+    );
+  }
+
+  if (!activities || activities.length === 0) {
+    return (
+      <div className="text-xs text-muted/60 py-2">No activity recorded.</div>
+    );
+  }
+
+  return (
+    <div className="space-y-0">
+      {activities.map((a) => {
+        const dotColor = ACTION_COLORS[a.action] || 'bg-muted/40';
+        const details = formatDetails(a.details);
+        return (
+          <div key={a.id} className="flex items-start gap-2 pl-1">
+            <div className="flex flex-col items-center flex-shrink-0">
+              <div className={cn('w-1.5 h-1.5 rounded-full mt-1.5', dotColor)} />
+              <div className="w-px flex-1 bg-border/50" />
+            </div>
+            <div className="pb-2.5 min-w-0">
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs font-medium text-foreground/80">
+                  {ACTION_LABELS[a.action] || a.action}
+                </span>
+                <span className="text-[10px] text-muted/60">
+                  {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+                </span>
+              </div>
+              {details && (
+                <p className="text-[10px] text-muted/50 mt-0.5 truncate">{details}</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CommitmentList({
   commitments,
   title,
@@ -86,6 +266,8 @@ export function CommitmentList({
   const [editFields, setEditFields] = useState<Record<string, string | null>>({});
   const [saving, setSaving] = useState(false);
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
+  const activityCacheRef = useRef<Map<string, CommitmentActivity[]>>(new Map());
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -214,9 +396,31 @@ export function CommitmentList({
                     </div>
                   </div>
 
-                  <span className={cn('text-xs mt-0.5 flex-shrink-0', isOverdue ? 'text-danger' : 'text-muted')}>
-                    {getCommitmentTypeLabel(c.commitment_type)}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+                    <span className={cn('text-xs', isOverdue ? 'text-danger' : 'text-muted')}>
+                      {getCommitmentTypeLabel(c.commitment_type)}
+                    </span>
+                    <SourceBadge sourceType={c.source_type} />
+                    <span
+                      className="text-[10px] text-muted/60 tabular-nums"
+                      title={buildPriorityTitle(c)}
+                    >
+                      {c.priority_score}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setHistoryId(historyId === c.id ? null : c.id);
+                      }}
+                      className={cn(
+                        'p-1 rounded hover:bg-card-hover transition-colors',
+                        historyId === c.id ? 'text-primary' : 'text-muted/40 hover:text-muted'
+                      )}
+                      title="Activity history"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </button>
 
                 {isExpanded && showActions && !isEditing && (
@@ -336,6 +540,18 @@ export function CommitmentList({
                       >
                         Cancel
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {historyId === c.id && (
+                  <div className="px-4 pb-3 border-t border-border/30">
+                    <div className="flex items-center gap-1.5 pt-2.5 pb-2">
+                      <History className="w-3 h-3 text-muted/60" />
+                      <span className="text-[10px] text-muted/60 uppercase tracking-wide font-medium">Activity History</span>
+                    </div>
+                    <div className="border-l-2 border-primary/20 pl-3 ml-0.5">
+                      <ActivityHistory commitmentId={c.id} activityCache={activityCacheRef} />
                     </div>
                   </div>
                 )}

@@ -32,6 +32,7 @@ export interface Organization {
   company_size: string | null;
   primary_contact_id: string | null;
   description: string | null;
+  intelligence: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -119,6 +120,7 @@ export interface CalendarEvent {
   ai_analysis: {
     org_match?: string;
     event_type?: string;
+    importance?: string;
     prep_notes?: string;
     implied_commitments?: Array<{
       title: string;
@@ -193,6 +195,7 @@ export interface AIExtraction {
 export interface ReviewEmail {
   id: string;
   ms_message_id: string | null;
+  conversation_id: string | null;
   sender: string | null;
   sender_email: string | null;
   subject: string;

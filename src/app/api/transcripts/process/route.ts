@@ -443,10 +443,18 @@ Compare the current session against the prior sessions. Return JSON only (no mar
 
     // 10. Update org metadata: mark last contact, refresh updated_at
     if (transcript.org_id) {
+      const now = new Date().toISOString();
       await supabase
         .from('organizations')
-        .update({ updated_at: new Date().toISOString() })
+        .update({ updated_at: now })
         .eq('id', transcript.org_id);
+
+      // Update last_interaction_date for all contacts in this org
+      await supabase
+        .from('contacts')
+        .update({ last_interaction_date: now })
+        .eq('org_id', transcript.org_id)
+        .lt('last_interaction_date', now);
     }
 
     // 11. Update engagement session tracking if linked

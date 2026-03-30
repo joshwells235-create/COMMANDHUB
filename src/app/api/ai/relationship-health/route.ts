@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 interface OrgHealth {
   org_id: string;
   org_name: string;
+  strategic_value: 'strategic' | 'standard' | 'emerging';
   score: number;
   status: 'thriving' | 'healthy' | 'cooling' | 'at_risk';
   days_since_contact: number;
@@ -65,7 +66,7 @@ export async function GET() {
     // Fetch all active organizations
     const { data: orgs, error: orgsError } = await supabase
       .from('organizations')
-      .select('id, name')
+      .select('id, name, strategic_value')
       .eq('status', 'active');
 
     if (orgsError) {
@@ -178,6 +179,7 @@ export async function GET() {
       return {
         org_id: org.id,
         org_name: org.name,
+        strategic_value: (org as Record<string, unknown>).strategic_value as OrgHealth['strategic_value'] || 'standard',
         score,
         status: scoreStatus(score),
         days_since_contact: daysSinceContact === 999 ? -1 : daysSinceContact,
@@ -302,6 +304,7 @@ export async function POST(request: NextRequest) {
     const healthData: OrgHealth = {
       org_id: org.id,
       org_name: org.name,
+      strategic_value: org.strategic_value || 'standard',
       score,
       status: scoreStatus(score),
       days_since_contact: daysSinceContact === 999 ? -1 : daysSinceContact,

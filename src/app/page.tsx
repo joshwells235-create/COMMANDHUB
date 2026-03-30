@@ -15,6 +15,7 @@ import { QuickAdd } from '@/components/commitments/quick-add';
 import { TodayEvents } from '@/components/calendar/today-events';
 import { NeedsReplySection } from '@/components/review/needs-reply-section';
 import { CommandHubChat } from '@/components/chat/command-hub-chat';
+import { ProactiveNudges } from '@/components/dashboard/proactive-nudges';
 import { ClientPulse } from '@/components/dashboard/client-pulse';
 import { ActivityFeed } from '@/components/dashboard/activity-feed';
 import { FollowUpWidget } from '@/components/dashboard/follow-up-widget';
@@ -203,12 +204,15 @@ export default function FocusView() {
             </button>
           </div>
 
-          {/* 3. Today's Calendar */}
+          {/* 3. Proactive Intel */}
+          <ProactiveNudges />
+
+          {/* 4. Today's Calendar */}
           <div className="bg-card rounded-xl border border-border p-4">
             <TodayEvents events={events} connected={connected} loading={calendarLoading} />
           </div>
 
-          {/* 4. Needs Attention */}
+          {/* 5. Needs Attention */}
           <div className="bg-card rounded-xl border border-border p-4">
             <CommitmentList
               commitments={needsAttention}
@@ -255,7 +259,21 @@ export default function FocusView() {
         <div className="hidden lg:grid lg:grid-cols-5 gap-4">
           {/* Left column - "Your Day" */}
           <div className="lg:col-span-3 space-y-4">
-            <h2 className="section-title">Your Day</h2>
+            <h2 className="section-title flex items-center gap-3">
+              Your Day
+              {stats.overdue === 0 && stats.dueToday === 0 && events.length <= 2 && (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-success/20 text-success uppercase tracking-wider">Light day</span>
+              )}
+              {(stats.overdue + stats.dueToday >= 5 || events.length >= 5) && (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-danger/20 text-danger uppercase tracking-wider">Full plate</span>
+              )}
+              {stats.overdue + stats.dueToday >= 1 && stats.overdue + stats.dueToday < 5 && events.length < 5 && (events.length > 2 || stats.overdue > 0) && (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-warning/20 text-warning uppercase tracking-wider">Busy</span>
+              )}
+            </h2>
+
+            {/* Proactive Intel */}
+            <ProactiveNudges />
 
             {/* Next Up Card (hero) */}
             <div className="bg-card rounded-xl border border-border next-up-border p-4 relative animated-gradient-border">

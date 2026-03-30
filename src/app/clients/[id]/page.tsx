@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -29,6 +29,8 @@ import {
   Pencil,
   Save,
   Plus,
+  Activity,
+  Heart,
 } from 'lucide-react';
 import { useClientDetail } from '@/lib/hooks/use-client-detail';
 import type { Transcript, TranscriptTheme, LanguageLeak } from '@/lib/hooks/use-client-detail';
@@ -42,6 +44,9 @@ import {
 import { SnoozePicker } from '@/components/ui/snooze-picker';
 import { DraftComposer } from '@/components/drafts/draft-composer';
 import { InteractionTimeline } from '@/components/clients/interaction-timeline';
+import { UnifiedTimeline } from '@/components/clients/unified-timeline';
+import type { TimelineItem } from '@/components/clients/unified-timeline';
+import type { CalendarEvent, ReviewEmail } from '@/types/database';
 import { format, formatDistanceToNow } from 'date-fns';
 
 export default function ClientDetailPage() {
@@ -57,6 +62,133 @@ export default function ClientDetailPage() {
     error,
     refresh,
   } = useClientDetail(orgId);
+
+  // Fetch emails and calendar events for the unified timeline
+  const [orgEmails, setOrgEmails] = useState<ReviewEmail[]>([]);
+  const [orgCalendarEvents, setOrgCalendarEvents] = useState<CalendarEvent[]>([]);
+
+  useEffect(() => {
+    if (!orgId) return;
+    // Fetch emails for this org
+    fetch(`/api/emails/needs-reply?org_id=${orgId}&all=true`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setOrgEmails(Array.isArray(data) ? data : data.emails || []))
+      .catch(() => setOrgEmails([]));
+    // Fetch calendar events for this org
+    fetch(`/api/calendar?org_id=${orgId}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setOrgCalendarEvents(Array.isArray(data) ? data : data.events || []))
+      .catch(() => setOrgCalendarEvents([]));
+  }, [orgId]);
+
+  // Health score data
+  const [healthData, setHealthData] = useState<{
+    score: number;
+    status: 'thriving' | 'healthy' | 'cooling' | 'at_risk';
+    days_since_contact: number;
+    overdue_count: number;
+    completion_rate: number;
+    trend: 'improving' | 'stable' | 'declining';
+    alert: string | null;
+  } | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [healthError, setHealthError] = useState(false);
+
+  useEffect(() => {
+    if (!orgId) return;
+    setHealthLoading(true);
+    setHealthError(false);
+    fetch('/api/ai/relationship-health')
+      .then((res) => (res.ok ? res.json() : Promise.reject('Failed')))
+      .then((data: Array<{ org_id: string; score: number; status: string; days_since_contact: number; overdue_count: number; completion_rate: number; trend: string; alert: string | null }>) => {
+        const match = Array.isArray(data) ? data.find((d) => d.org_id === orgId) : null;
+        if (match) {
+          setHealthData(match as typeof healthData);
+        } else {
+          setHealthData(null);
+        }
+      })
+      .catch(() => setHealthError(true))
+      .finally(() => setHealthLoading(false));
+  }, [orgId]);
+
+  // Derive next meeting from calendar events
+  const nextMeeting = useMemo(() => {
+    const now = new Date();
+    const future = orgCalendarEvents
+      .filter((ev) => new Date(ev.start_time) > now)
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+    return future.length > 0 ? future[0] : null;
+  }, [orgCalendarEvents]);
+
+  // Build unified timeline items
+  const unifiedTimelineItems = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = [];
+
+    // Transcripts
+    transcripts.forEach((t) => {
+      items.push({
+        id: t.id,
+        type: 'transcript',
+        date: t.transcript_date,
+        title: t.title || `${t.transcript_type || 'Session'} - ${format(new Date(t.transcript_date), 'MMM d, yyyy')}`,
+        subtitle: t.summary ? t.summary.slice(0, 120) + (t.summary.length > 120 ? '...' : '') : undefined,
+      });
+    });
+
+    // Active commitments (created)
+    commitments.forEach((c) => {
+      items.push({
+        id: c.id,
+        type: 'commitment_created',
+        date: c.created_at,
+        title: c.title,
+        subtitle: c.commitment_type ? c.commitment_type.replace(/_/g, ' ') : undefined,
+        detail: c.description || undefined,
+      });
+    });
+
+    // Completed commitments
+    completedCommitments.forEach((c) => {
+      items.push({
+        id: c.id,
+        type: 'commitment_completed',
+        date: c.completed_at || c.updated_at,
+        title: c.title,
+        subtitle: 'Completed',
+      });
+    });
+
+    // Emails
+    orgEmails.forEach((e) => {
+      const isSent = e.sender_email?.toLowerCase().includes('josh') || false;
+      items.push({
+        id: e.id,
+        type: isSent ? 'email_sent' : 'email_received',
+        date: e.received_at || e.created_at,
+        title: e.subject || '(No subject)',
+        subtitle: isSent ? `To: ${e.sender || 'Unknown'}` : `From: ${e.sender || 'Unknown'}`,
+        detail: e.body_preview || undefined,
+        sentiment: e.ai_extraction?.needs_reply
+          ? (e.ai_extraction.reply_urgency === 'today' ? 'concerned' : undefined)
+          : undefined,
+      });
+    });
+
+    // Calendar events
+    orgCalendarEvents.forEach((ev) => {
+      items.push({
+        id: ev.id,
+        type: 'calendar',
+        date: ev.start_time,
+        title: ev.subject || 'Meeting',
+        subtitle: ev.location || undefined,
+        detail: ev.body_preview || undefined,
+      });
+    });
+
+    return items;
+  }, [transcripts, commitments, completedCommitments, orgEmails, orgCalendarEvents]);
 
   const [showDraft, setShowDraft] = useState(false);
   const [expandedCommitment, setExpandedCommitment] = useState<string | null>(null);
@@ -121,6 +253,8 @@ export default function ClientDetailPage() {
   const [trajectoryLoading, setTrajectoryLoading] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     commitments: true,
+    unifiedTimeline: true,
+    emailIntel: true,
     timeline: true,
     brief: true,
     trajectory: false,
@@ -279,6 +413,17 @@ export default function ClientDetailPage() {
       setSearching(false);
     }
   }
+
+  // Auto-load cached longitudinal analysis from org intelligence
+  useEffect(() => {
+    if (organization?.intelligence) {
+      const intel = organization.intelligence as { longitudinal?: Record<string, unknown> };
+      if (intel.longitudinal) {
+        setTrajectoryData({ analysis: intel.longitudinal } as Record<string, unknown>);
+        setExpandedSections((prev) => ({ ...prev, trajectory: true }));
+      }
+    }
+  }, [organization]);
 
   async function generateTrajectory() {
     setTrajectoryLoading(true);
@@ -614,6 +759,150 @@ export default function ClientDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Client Health Score */}
+        {healthLoading ? (
+          <div className="premium-card p-4">
+            <div className="flex items-center gap-3 animate-pulse">
+              <div className="w-14 h-14 rounded-xl bg-card-hover" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-32 bg-card-hover rounded" />
+                <div className="h-3 w-48 bg-card-hover rounded" />
+              </div>
+              <div className="flex gap-4">
+                <div className="h-8 w-16 bg-card-hover rounded" />
+                <div className="h-8 w-16 bg-card-hover rounded" />
+                <div className="h-8 w-16 bg-card-hover rounded" />
+              </div>
+            </div>
+          </div>
+        ) : healthError ? (
+          <div className="premium-card p-4">
+            <div className="flex items-center gap-2 text-muted">
+              <AlertTriangle className="w-4 h-4" />
+              <span className="text-sm">Health data unavailable</span>
+            </div>
+          </div>
+        ) : healthData ? (
+          <div className="premium-card p-4">
+            <div className="flex items-center gap-4">
+              {/* Score circle */}
+              <div
+                className={cn(
+                  'flex-shrink-0 w-14 h-14 rounded-xl flex flex-col items-center justify-center border',
+                  healthData.score >= 70
+                    ? 'bg-success/10 border-success/30'
+                    : healthData.score >= 40
+                      ? 'bg-warning/10 border-warning/30'
+                      : 'bg-danger/10 border-danger/30'
+                )}
+              >
+                <span
+                  className={cn(
+                    'text-xl font-bold leading-none',
+                    healthData.score >= 70
+                      ? 'text-success'
+                      : healthData.score >= 40
+                        ? 'text-warning'
+                        : 'text-danger'
+                  )}
+                >
+                  {healthData.score}
+                </span>
+                <span className="text-[10px] text-muted leading-none mt-0.5">health</span>
+              </div>
+
+              {/* Status + trend */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <Heart
+                    className={cn(
+                      'w-4 h-4',
+                      healthData.score >= 70
+                        ? 'text-success'
+                        : healthData.score >= 40
+                          ? 'text-warning'
+                          : 'text-danger'
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      'text-xs px-2 py-0.5 rounded-full font-medium',
+                      healthData.status === 'thriving'
+                        ? 'bg-success/20 text-success'
+                        : healthData.status === 'healthy'
+                          ? 'bg-success/15 text-success'
+                          : healthData.status === 'cooling'
+                            ? 'bg-warning/20 text-warning'
+                            : 'bg-danger/20 text-danger'
+                    )}
+                  >
+                    {healthData.status === 'at_risk'
+                      ? 'At Risk'
+                      : healthData.status.charAt(0).toUpperCase() + healthData.status.slice(1)}
+                  </span>
+                  {healthData.trend !== 'stable' && (
+                    <span
+                      className={cn(
+                        'text-[10px] px-1.5 py-0.5 rounded font-medium',
+                        healthData.trend === 'improving'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-danger/10 text-danger'
+                      )}
+                    >
+                      {healthData.trend === 'improving' ? 'Improving' : 'Declining'}
+                    </span>
+                  )}
+                </div>
+                {healthData.alert && (
+                  <p className="text-xs text-warning/80 truncate">{healthData.alert}</p>
+                )}
+              </div>
+
+              {/* Metric pills */}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-foreground">
+                    {healthData.days_since_contact === -1
+                      ? '--'
+                      : `${healthData.days_since_contact}d`}
+                  </p>
+                  <p className="text-[10px] text-muted leading-none">last contact</p>
+                </div>
+                <div className="w-px h-6 bg-border" />
+                <div className="text-center">
+                  <p
+                    className={cn(
+                      'text-sm font-semibold',
+                      healthData.overdue_count > 0 ? 'text-danger' : 'text-foreground'
+                    )}
+                  >
+                    {healthData.overdue_count}
+                  </p>
+                  <p className="text-[10px] text-muted leading-none">overdue</p>
+                </div>
+                <div className="w-px h-6 bg-border" />
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-foreground">
+                    {healthData.completion_rate}%
+                  </p>
+                  <p className="text-[10px] text-muted leading-none">complete</p>
+                </div>
+                {nextMeeting && (
+                  <>
+                    <div className="w-px h-6 bg-border" />
+                    <div className="text-center">
+                      <p className="text-sm font-semibold text-primary">
+                        {format(new Date(nextMeeting.start_time), 'MMM d')}
+                      </p>
+                      <p className="text-[10px] text-muted leading-none">next meeting</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {/* Active Commitments */}
         <section>
@@ -1206,6 +1495,143 @@ export default function ClientDetailPage() {
             </div>
           )}
         </section>
+
+        {/* Unified Timeline */}
+        <section>
+          <button
+            onClick={() => toggleSection('unifiedTimeline')}
+            className="w-full flex items-center justify-between mb-3"
+          >
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+              Activity Feed ({unifiedTimelineItems.length})
+            </h2>
+            {expandedSections.unifiedTimeline ? (
+              <ChevronDown className="w-4 h-4 text-muted" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-muted" />
+            )}
+          </button>
+
+          {expandedSections.unifiedTimeline && (
+            <UnifiedTimeline items={unifiedTimelineItems} loading={loading} />
+          )}
+        </section>
+
+        {/* Email Intelligence */}
+        {orgEmails.length > 0 && (
+          <section className="bg-card rounded-xl border border-border p-4">
+            <button
+              onClick={() => toggleSection('emailIntel')}
+              className="w-full flex items-center justify-between mb-3"
+            >
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+                Email Intelligence
+              </h2>
+              {expandedSections.emailIntel ? (
+                <ChevronDown className="w-4 h-4 text-muted" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-muted" />
+              )}
+            </button>
+
+            {expandedSections.emailIntel && (() => {
+              const emailsWithIntel = orgEmails.filter((e) => e.ai_extraction);
+              const sentimentCounts: Record<string, number> = {};
+              const allTopics: string[] = [];
+              const callbacks: string[] = [];
+              const needsReply = orgEmails.filter((e) => e.ai_extraction?.needs_reply);
+
+              for (const email of emailsWithIntel) {
+                const ext = email.ai_extraction as unknown as Record<string, unknown> | null;
+                if (!ext) continue;
+                const sentiment = ext.sentiment as string | undefined;
+                if (sentiment) sentimentCounts[sentiment] = (sentimentCounts[sentiment] || 0) + 1;
+                const topics = ext.key_topics as string[] | undefined;
+                if (Array.isArray(topics)) allTopics.push(...topics);
+                const cbs = ext.callback_opportunities as string[] | undefined;
+                if (Array.isArray(cbs)) callbacks.push(...cbs);
+              }
+
+              const topTopics = [...new Set(allTopics)].slice(0, 8);
+              const uniqueCallbacks = [...new Set(callbacks)].slice(0, 5);
+
+              return (
+                <div className="space-y-3">
+                  {/* Sentiment Overview */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-xs text-muted">Sentiment:</span>
+                    {Object.entries(sentimentCounts).map(([s, count]) => (
+                      <span
+                        key={s}
+                        className={cn(
+                          'text-xs px-2 py-0.5 rounded-full font-medium',
+                          s === 'positive' && 'bg-success/20 text-success',
+                          s === 'negative' && 'bg-danger/20 text-danger',
+                          s === 'concerned' && 'bg-warning/20 text-warning',
+                          s === 'neutral' && 'bg-muted/20 text-muted'
+                        )}
+                      >
+                        {s}: {count}
+                      </span>
+                    ))}
+                    {Object.keys(sentimentCounts).length === 0 && (
+                      <span className="text-xs text-muted/60">No sentiment data</span>
+                    )}
+                  </div>
+
+                  {/* Topics */}
+                  {topTopics.length > 0 && (
+                    <div>
+                      <span className="text-xs text-muted block mb-1">Key Topics:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {topTopics.map((topic) => (
+                          <span key={topic} className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                            {topic}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Callbacks */}
+                  {uniqueCallbacks.length > 0 && (
+                    <div>
+                      <span className="text-xs text-muted block mb-1">Callback Opportunities:</span>
+                      <ul className="space-y-1">
+                        {uniqueCallbacks.map((cb, i) => (
+                          <li key={i} className="text-xs text-foreground/80 flex items-start gap-1.5">
+                            <Lightbulb className="w-3 h-3 text-warning flex-shrink-0 mt-0.5" />
+                            {cb}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Needs Reply */}
+                  {needsReply.length > 0 && (
+                    <div className="border-t border-border/50 pt-2">
+                      <span className="text-xs text-warning font-medium">
+                        {needsReply.length} email{needsReply.length > 1 ? 's' : ''} awaiting reply
+                      </span>
+                      <div className="mt-1 space-y-1">
+                        {needsReply.slice(0, 3).map((email) => (
+                          <div key={email.id} className="text-xs text-muted truncate">
+                            {email.sender || 'Unknown'}: {email.subject}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {emailsWithIntel.length === 0 && (
+                    <p className="text-xs text-muted/60">Email intelligence not yet processed</p>
+                  )}
+                </div>
+              );
+            })()}
+          </section>
+        )}
 
         {/* Visual Interaction Timeline */}
         {timelineEntries.length > 0 && (
