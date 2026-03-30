@@ -1,6 +1,6 @@
 'use client';
 
-import { Calendar, MapPin, AlertTriangle, ExternalLink, Zap } from 'lucide-react';
+import { Calendar, MapPin, AlertTriangle, ExternalLink, Zap, FileText } from 'lucide-react';
 import Link from 'next/link';
 import type { CalendarEvent } from '@/types/database';
 import { formatEventTime } from '@/lib/utils';
@@ -82,6 +82,7 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
             const importance = event.ai_analysis?.importance as string | undefined;
             const eventTypeLabel = eventType ? EVENT_TYPE_LABELS[eventType] : undefined;
             const isHighImportance = importance === 'high';
+            const isPrepWorthy = eventType && !['personal'].includes(eventType);
             return (
               <div key={event.id} className={`px-4 py-3${isHighImportance ? ' ring-1 ring-primary/30 bg-primary/5 rounded-lg' : ''}`}>
                 <div className="flex items-start gap-3">
@@ -96,15 +97,6 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
                           {eventTypeLabel}
                         </span>
                       )}
-                      {event.org_id && (
-                        <Link
-                          href={`/prep/${event.org_id}`}
-                          className="flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
-                        >
-                          <Zap className="w-3 h-3" />
-                          Prep
-                        </Link>
-                      )}
                     </div>
                     {event.organization && (
                       <span className="text-xs text-primary">{event.organization.name}</span>
@@ -117,9 +109,18 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
                     )}
                     {prepNotes && (
                       <div className="mt-2 flex items-start gap-1.5">
-                        <AlertTriangle className="w-3 h-3 text-warning mt-0.5 flex-shrink-0" />
-                        <p className="text-xs text-warning/80">{prepNotes}</p>
+                        <FileText className="w-3 h-3 text-muted mt-0.5 flex-shrink-0" />
+                        <p className="text-xs text-muted/80">{prepNotes}</p>
                       </div>
+                    )}
+                    {event.org_id && isPrepWorthy && (
+                      <Link
+                        href={`/prep/${event.org_id}`}
+                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/20 hover:border-amber-500/30 transition-colors"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        Generate Prep Brief
+                      </Link>
                     )}
                   </div>
                 </div>
