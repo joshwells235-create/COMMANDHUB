@@ -996,6 +996,23 @@ function parseStructuredResponse(text: string): StructuredResponse {
     // Not JSON, treat as plain message
   }
 
+  // Claude sometimes outputs conversational text BEFORE the JSON block.
+  // Find the last top-level JSON object in the response.
+  const embeddedJsonMatch = text.match(/(\{[\s\S]*"message"\s*:\s*"[\s\S]*"actions"\s*:\s*\[[\s\S]*\][\s\S]*\})\s*$/);
+  if (embeddedJsonMatch) {
+    try {
+      const parsed = JSON.parse(embeddedJsonMatch[1]);
+      if (parsed.message && typeof parsed.message === 'string') {
+        return {
+          message: parsed.message,
+          actions: Array.isArray(parsed.actions) ? parsed.actions : undefined,
+        };
+      }
+    } catch {
+      // Not valid JSON, fall through
+    }
+  }
+
   return { message: text };
 }
 
@@ -1554,14 +1571,14 @@ ${(() => {
 ACTION SYSTEM:
 You are a fully capable chief of staff that can take action on Josh's behalf. When Josh asks you to DO something, return structured JSON. When he asks a QUESTION, respond with plain text using the data above.
 
-When an action is needed, return ONLY valid JSON (no markdown fences, no extra text) in this format:
+When an action is needed, your ENTIRE response must be ONLY the JSON object below — no conversational text before or after it, no markdown fences. Put your conversational response INSIDE the "message" field:
 {
   "message": "Your human-readable response explaining what you did or are doing",
   "actions": [
     {"type": "create_commitment", "data": {"title": "...", "org_name": "...", "commitment_type": "promise_made|ask_received|follow_up|waiting_on|deliverable|prep|internal|note_to_self", "due_date": "...", "owner": "josh|other", "description": "..."}},
     {"type": "complete_commitment", "data": {"id": "...", "title": "..."}},
     {"type": "snooze_commitment", "data": {"id": "...", "title": "...", "until": "..."}},
-    {"type": "update_commitment", "data": {"id": "...", "title": "...", "updates": {"title": "...", "due_date": "...", "commitment_type": "...", "description": "...", "owner": "..."}}},
+    {"type": "update_commitment", "data": {"id": "...", "title": "...", "updates": {"title": "...", "due_date": "...", "commitment_type": "...", "description": "...", "owner": "...", "org_name": "..."}}},
     {"type": "cancel_commitment", "data": {"id": "...", "title": "..."}},
     {"type": "update_organization", "data": {"name": "...", "updates": {"status": "active|prospect|partner|paused|completed", "strategic_value": "strategic|standard|emerging", "industry": "...", "notes": "..."}}},
     {"type": "create_organization", "data": {"name": "...", "status": "prospect", "strategic_value": "standard", "industry": "..."}},
