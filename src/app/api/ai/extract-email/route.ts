@@ -42,19 +42,30 @@ export async function extractCommitmentsFromEmail(
   email: Record<string, unknown>,
   supabase: ReturnType<typeof createServerClient>
 ) {
-  // Fetch orgs and contacts for matching context
-  const { data: orgs } = await supabase
-    .from('organizations')
-    .select('name, id, strategic_value, status');
+  const isSent = email.folder === 'sent';
 
-  const { data: contacts } = await supabase
-    .from('contacts')
-    .select('name, id, org_id, role, email, relationship_type');
+  // Fetch orgs, contacts, and pending commitments in parallel
+  const [orgRes, contactRes, pendingRes] = await Promise.all([
+    supabase.from('organizations').select('name, id, strategic_value, status'),
+    supabase.from('contacts').select('name, id, org_id, role, email, relationship_type'),
+    isSent
+      ? supabase
+          .from('commitments')
+          .select('id, title, description, commitment_type, owner, other_party, org_id, status')
+          .in('status', ['pending', 'in_progress', 'waiting'])
+          .order('priority_score', { ascending: false })
+          .limit(50)
+      : Promise.resolve({ data: [] }),
+  ]);
 
-  const orgList = (orgs || []).map((o) => `${o.name} (${o.status}, ${o.strategic_value})`).join(', ');
-  const contactList = (contacts || [])
+  const orgs = orgRes.data || [];
+  const contacts = contactRes.data || [];
+  const pendingCommitments = pendingRes.data || [];
+
+  const orgList = orgs.map((o) => `${o.name} (${o.status}, ${o.strategic_value})`).join(', ');
+  const contactList = contacts
     .map((c) => {
-      const org = orgs?.find((o) => o.id === c.org_id);
+      const org = orgs.find((o) => o.id === c.org_id);
       return `${c.name}${org ? ` (${org.name})` : ''}${c.role ? ` - ${c.role}` : ''}${c.email ? ` <${c.email}>` : ''}`;
     })
     .join('\n');
@@ -65,6 +76,15 @@ export async function extractCommitmentsFromEmail(
         .join(', ')
     : 'Unknown';
 
+  // Build the pending commitments context for sent emails
+  const pendingContext = isSent && pendingCommitments.length > 0
+    ? `\n\nPENDING COMMITMENTS (check if this sent email resolves any of these):\n${pendingCommitments.map((c) => `- [ID:${c.id}] "${c.title}" (${c.commitment_type}, owner: ${c.owner}${c.other_party ? `, with: ${c.other_party}` : ''})`).join('\n')}`
+    : '';
+
+  const directionContext = isSent
+    ? `This is a SENT email — Josh wrote this. Analyze what Josh is promising, delivering, or following up on. This tells you what Josh is actively doing.`
+    : `This is a RECEIVED email — someone sent this to Josh. Analyze what's being asked, promised, or communicated to Josh.`;
+
   const client = new Anthropic();
   const message = await client.messages.create({
     model: AI_MODEL,
@@ -74,15 +94,18 @@ export async function extractCommitmentsFromEmail(
         role: 'user',
         content: `You are an executive assistant and intelligence analyst for Josh Wells, a Partner at LeadShift, a leadership development consulting firm. You are analyzing an email to extract actionable intelligence — not just commitments, but everything useful for client relationships, session prep, and business development.
 
+${directionContext}
+
 Known organizations Josh works with: ${orgList}
 Known contacts:
 ${contactList}
+${pendingContext}
 
 Email Details:
   Subject: ${email.subject || 'No subject'}
   From: ${email.sender || 'Unknown'} <${email.sender_email || ''}>
   To/CC: ${recipients}
-  Received: ${email.received_at || 'Unknown'}
+  Date: ${email.sent_at || email.received_at || 'Unknown'}
   Body:
 ${email.body_text || email.body_preview || 'No body'}
 
@@ -94,10 +117,17 @@ STEP 2 — EXTRACT INTELLIGENCE:
 For non-noise emails, extract:
 
 COMMITMENTS — any action items, promises, asks, or follow-ups:
-1. PROMISES JOSH MADE - things Josh said he would do
+${isSent ? `Since Josh SENT this email:
+1. PROMISES JOSH MADE - things Josh said he would do ("I'll send that over", "I will follow up")
+2. THINGS JOSH DELIVERED - did Josh send a document, answer a question, or complete a task?
+3. NEW FOLLOW-UPS CREATED - did Josh's email create new expectations for a response or next step?
+4. WAITING_ON ITEMS - is Josh now waiting for someone to respond or act?` : `Since Josh RECEIVED this email:
+1. PROMISES JOSH MADE - things Josh said he would do in the thread
 2. ASKS OF JOSH - direct requests made to Josh
 3. PROMISES OTHERS MADE TO JOSH - things Josh should track as waiting_on
-4. IMPLICIT FOLLOW-UPS - proposals need follow-up, questions need responses, meetings need prep
+4. IMPLICIT FOLLOW-UPS - proposals need follow-up, questions need responses, meetings need prep`}
+${isSent ? `
+RESOLVED COMMITMENTS — compare this email against the PENDING COMMITMENTS list above. If Josh's sent email appears to fulfill or address any pending commitment, list the commitment IDs that should be marked complete or in-progress.` : ''}
 
 CLIENT INTELLIGENCE — signals about the client relationship:
 - Sentiment: What's the emotional tone? (positive, neutral, concerned, frustrated, excited)
@@ -110,19 +140,19 @@ PREP VALUE — information useful for upcoming sessions:
 - Topics the client is thinking about right now
 - Questions or concerns they've raised
 - Context Josh should know before next meeting
-- Callbacks: specific things Josh could reference in next conversation to show he's paying attention ("You mentioned X in your email...")
+- Callbacks: specific things Josh could reference in next conversation to show he's paying attention
 
-CONTACT DISCOVERY — any new people mentioned who aren't in the known contacts list:
-- Name, apparent role, organization, email if visible
+CONTACT DISCOVERY — any new people mentioned who aren't in the known contacts list
 
 Return JSON only (no markdown, no code blocks):
 {
   "email_category": "client|internal|vendor|newsletter|personal|scheduling",
   "is_noise": false,
+  "direction": "${isSent ? 'sent' : 'received'}",
   "org_match": "org_name or null",
   "email_summary": "Brief summary of what this email is about",
-  "needs_reply": true/false,
-  "reply_urgency": "today|this_week|no_rush|none",
+  "needs_reply": ${isSent ? 'false' : 'true/false'},
+  "reply_urgency": "${isSent ? 'none' : 'today|this_week|no_rush|none'}",
   "sentiment": "positive|neutral|concerned|frustrated|excited",
   "client_intelligence": {
     "key_topics": ["topic1", "topic2"],
@@ -147,20 +177,21 @@ Return JSON only (no markdown, no code blocks):
   "commitments": [
     {
       "title": "Short action item title",
-      "description": "More detail about what needs to be done",
+      "description": "More detail",
       "commitment_type": "promise_made|ask_received|follow_up|waiting_on|deliverable|prep|internal|note_to_self",
       "owner": "josh|other",
       "other_party": "Name of the other person involved",
       "suggested_due": "ISO date string or null",
       "confidence": "high|medium|low",
-      "source_quote": "Exact quote from email that indicates this commitment"
+      "source_quote": "Exact quote from email"
     }
   ],
+  "resolved_commitment_ids": ["commitment-uuid-1"]${isSent ? ' // IDs from PENDING COMMITMENTS that this email resolves' : ''},
   "auto_accept": true/false
 }
 
 Set "auto_accept": true ONLY if ALL commitments are high-confidence and clearly actionable. Otherwise false.
-If is_noise is true, return minimal fields: email_category, is_noise, org_match (null), email_summary, needs_reply (false), reply_urgency ("none"), sentiment ("neutral"), and empty arrays for everything else.
+If is_noise is true, return minimal fields with empty arrays.
 Be thorough but avoid fabricating intelligence that isn't supported by the email content.`,
       },
     ],
@@ -181,7 +212,7 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
   // Match org name to ID
   let matchedOrgId: string | null = null;
   if (extraction.org_match) {
-    const matchedOrg = orgs?.find(
+    const matchedOrg = orgs.find(
       (o) => o.name.toLowerCase() === extraction.org_match.toLowerCase()
     );
     if (matchedOrg) matchedOrgId = matchedOrg.id;
@@ -191,6 +222,9 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
   let reviewStatus = 'pending';
   if (extraction.is_noise) {
     reviewStatus = 'dismissed';
+  } else if (isSent) {
+    // Sent emails don't need review — they're Josh's own actions
+    reviewStatus = 'accepted';
   } else if (extraction.auto_accept && extraction.commitments?.length > 0) {
     reviewStatus = 'accepted';
   }
@@ -206,15 +240,47 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
     })
     .eq('id', email.id);
 
-  // Auto-create commitments for high-confidence auto-accept emails
+  // Auto-resolve commitments that Josh's sent email addresses
+  if (isSent && extraction.resolved_commitment_ids?.length > 0) {
+    for (const commitmentId of extraction.resolved_commitment_ids) {
+      // Verify the commitment exists and is pending
+      const { data: existing } = await supabase
+        .from('commitments')
+        .select('id, status')
+        .eq('id', commitmentId)
+        .in('status', ['pending', 'in_progress', 'waiting'])
+        .single();
+
+      if (existing) {
+        await supabase
+          .from('commitments')
+          .update({
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', commitmentId);
+
+        // Log the auto-completion
+        await supabase.from('commitment_activity').insert({
+          commitment_id: commitmentId,
+          activity_type: 'completed',
+          description: `Auto-completed: Josh sent email "${email.subject}" which addresses this commitment`,
+          metadata: { source: 'email_auto_resolve', email_id: email.id },
+        });
+      }
+    }
+  }
+
+  // Auto-create commitments for high-confidence emails (inbox only — sent emails create different signals)
   if (extraction.auto_accept && extraction.commitments?.length > 0 && !extraction.is_noise) {
     for (const commitment of extraction.commitments) {
       // Match contact if possible
       let contactId: string | null = null;
       if (commitment.other_party && contacts) {
         const matchedContact = contacts.find(
-          (c) => c.name.toLowerCase().includes(commitment.other_party.toLowerCase()) ||
-                 commitment.other_party.toLowerCase().includes(c.name.toLowerCase())
+          (c: { name: string }) =>
+            c.name.toLowerCase().includes(commitment.other_party.toLowerCase()) ||
+            commitment.other_party.toLowerCase().includes(c.name.toLowerCase())
         );
         if (matchedContact) contactId = matchedContact.id;
       }

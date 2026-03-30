@@ -1138,36 +1138,74 @@ ${orgList.map((o) => `- [id:${o.id}] ${o.name} (${o.status}, ${o.strategic_value
       contextParts.push(`JOSH'S PROFILE:\n${profileParts.join('\n')}`);
     }
 
-    // Fetch recent emails (subjects, senders, AI extractions, reply urgency)
+    // Fetch recent emails — both inbox and sent for full picture
     const { data: recentEmails } = await supabase
       .from('emails')
-      .select('subject, sender, sender_email, body_preview, received_at, org_id, ai_extraction, review_status, organizations(name)')
+      .select('subject, sender, sender_email, body_preview, received_at, sent_at, folder, org_id, ai_extraction, review_status')
       .order('received_at', { ascending: false })
-      .limit(15);
+      .limit(25);
 
     if (recentEmails && recentEmails.length > 0) {
-      contextParts.push(`RECENT EMAILS (${recentEmails.length}):
-${recentEmails.map((e) => {
-        const orgName = (e.organizations as unknown as { name: string } | null)?.name;
-        const ai = e.ai_extraction as Record<string, unknown> | null;
-        const urgency = ai?.reply_urgency ? ` [reply: ${ai.reply_urgency}]` : '';
-        const commitments = Array.isArray(ai?.commitments) ? ` | Extracted: ${(ai.commitments as Array<{ title: string }>).map((c) => c.title).join('; ')}` : '';
-        return `- ${new Date(e.received_at).toLocaleDateString()}: "${e.subject}" from ${e.sender}${orgName ? ' (' + orgName + ')' : ''}${urgency}${commitments}${e.body_preview ? '\n  Preview: ' + e.body_preview.substring(0, 150) : ''}`;
-      }).join('\n')}`);
+      // Fetch org names separately to avoid join issues
+      const emailOrgIds = [...new Set(recentEmails.map((e) => e.org_id).filter(Boolean))];
+      let emailOrgMap = new Map<string, string>();
+      if (emailOrgIds.length > 0) {
+        const { data: emailOrgs } = await supabase
+          .from('organizations')
+          .select('id, name')
+          .in('id', emailOrgIds);
+        emailOrgMap = new Map((emailOrgs || []).map((o: { id: string; name: string }) => [o.id, o.name]));
+      }
+
+      const inboxEmails = recentEmails.filter((e) => e.folder !== 'sent');
+      const sentEmails = recentEmails.filter((e) => e.folder === 'sent');
+
+      if (inboxEmails.length > 0) {
+        contextParts.push(`RECENT INBOX EMAILS (${inboxEmails.length}):
+${inboxEmails.map((e) => {
+          const orgName = e.org_id ? emailOrgMap.get(e.org_id as string) : null;
+          const ai = e.ai_extraction as Record<string, unknown> | null;
+          const urgency = ai?.reply_urgency && ai.reply_urgency !== 'none' ? ` [reply: ${ai.reply_urgency}]` : '';
+          const sentiment = ai?.sentiment && ai.sentiment !== 'neutral' ? ` [${ai.sentiment}]` : '';
+          const intel = ai?.client_intelligence as Record<string, unknown> | null;
+          const topics = Array.isArray(intel?.key_topics) ? ` | Topics: ${(intel.key_topics as string[]).join(', ')}` : '';
+          return `- ${new Date(e.received_at as string).toLocaleDateString()}: "${e.subject}" from ${e.sender}${orgName ? ' (' + orgName + ')' : ''}${urgency}${sentiment}${topics}${ai?.email_summary ? '\n  Summary: ' + ai.email_summary : ''}`;
+        }).join('\n')}`);
+      }
+
+      if (sentEmails.length > 0) {
+        contextParts.push(`JOSH'S RECENT SENT EMAILS (${sentEmails.length}):
+${sentEmails.map((e) => {
+          const orgName = e.org_id ? emailOrgMap.get(e.org_id as string) : null;
+          const ai = e.ai_extraction as Record<string, unknown> | null;
+          return `- ${new Date((e.sent_at || e.received_at) as string).toLocaleDateString()}: "${e.subject}" to ${Array.isArray(e.sender) ? e.sender : 'recipients'}${orgName ? ' (' + orgName + ')' : ''}${ai?.email_summary ? '\n  Summary: ' + ai.email_summary : ''}`;
+        }).join('\n')}`);
+      }
     }
 
     // Fetch engagements (workstreams, contracts, financial context)
     const { data: engagements } = await supabase
       .from('engagements')
-      .select('name, type, status, value_amount, start_date, end_date, notes, org_id, organizations(name)')
+      .select('name, type, status, value_amount, start_date, end_date, notes, org_id')
       .in('status', ['active', 'pending'])
       .order('created_at', { ascending: false })
       .limit(20);
 
     if (engagements && engagements.length > 0) {
+      // Build org map for engagements
+      const engOrgIds = [...new Set(engagements.map((e) => e.org_id).filter(Boolean))];
+      let engOrgMap = new Map<string, string>();
+      if (engOrgIds.length > 0) {
+        const { data: engOrgs } = await supabase
+          .from('organizations')
+          .select('id, name')
+          .in('id', engOrgIds);
+        engOrgMap = new Map((engOrgs || []).map((o: { id: string; name: string }) => [o.id, o.name]));
+      }
+
       contextParts.push(`ACTIVE ENGAGEMENTS/WORKSTREAMS:
 ${engagements.map((e) => {
-        const orgName = (e.organizations as unknown as { name: string } | null)?.name;
+        const orgName = e.org_id ? engOrgMap.get(e.org_id as string) : null;
         return `- ${e.name} (${e.type || 'unknown type'}, ${e.status})${orgName ? ' — ' + orgName : ''}${e.value_amount ? ' | $' + Number(e.value_amount).toLocaleString() : ''}${e.start_date ? ' | Started: ' + e.start_date : ''}${e.end_date ? ' | Ends: ' + e.end_date : ''}${e.notes ? ' | ' + e.notes.substring(0, 100) : ''}`;
       }).join('\n')}`);
     }

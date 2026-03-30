@@ -28,12 +28,13 @@ export async function GET(request: NextRequest) {
     // Step 1: Sync emails from Microsoft Graph
     const syncCount = await syncEmails();
 
-    // Step 2: Fetch all unprocessed emails
+    // Step 2: Fetch unprocessed emails (batch of 5 to avoid timeout)
     const { data: unprocessedEmails, error: fetchError } = await supabase
       .from('emails')
       .select('*')
       .eq('is_processed', false)
-      .order('received_at', { ascending: true });
+      .order('received_at', { ascending: true })
+      .limit(5);
 
     if (fetchError) {
       console.error('Error fetching unprocessed emails:', fetchError);
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Step 3: Extract commitments from each unprocessed email inline
+    // Step 3: Extract intelligence from each unprocessed email
     let extractionCount = 0;
     const errors: Array<{ email_id: string; error: string }> = [];
 
@@ -57,14 +58,26 @@ export async function GET(request: NextRequest) {
           email_id: email.id,
           error: error instanceof Error ? error.message : 'Unknown error',
         });
+        // Mark as processed to avoid retrying broken emails forever
+        await supabase
+          .from('emails')
+          .update({ is_processed: true, review_status: 'error' })
+          .eq('id', email.id);
       }
     }
+
+    // Count remaining unprocessed
+    const { count: remaining } = await supabase
+      .from('emails')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_processed', false);
 
     return NextResponse.json({
       success: true,
       sync_count: syncCount,
       extraction_count: extractionCount,
-      unprocessed_total: (unprocessedEmails || []).length,
+      batch_size: (unprocessedEmails || []).length,
+      remaining_unprocessed: remaining || 0,
       errors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {

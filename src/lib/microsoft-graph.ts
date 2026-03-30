@@ -187,6 +187,29 @@ export async function fetchEmails(sinceDate: string, top: number = 50) {
   return data.value;
 }
 
+export async function fetchSentEmails(sinceDate: string, top: number = 50) {
+  const accessToken = await getValidAccessToken();
+
+  const filter = `sentDateTime ge ${sinceDate}`;
+  const url = `${GRAPH_BASE}/me/mailFolders/sentitems/messages?$top=${top}&$orderby=sentDateTime desc&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,body,bodyPreview,sentDateTime,receivedDateTime,conversationId`;
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Prefer: 'outlook.body-content-type="text"',
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(`Failed to fetch sent emails: ${errorData.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.value;
+}
+
 export async function syncEmails() {
   const supabase = createServerClient();
 
@@ -201,9 +224,16 @@ export async function syncEmails() {
   const sinceDate = lastEmail?.received_at
     || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const emails = await fetchEmails(sinceDate);
+  // Fetch inbox and sent in parallel
+  const [inboxEmails, sentEmails] = await Promise.all([
+    fetchEmails(sinceDate),
+    fetchSentEmails(sinceDate),
+  ]);
 
-  for (const email of emails) {
+  let totalSynced = 0;
+
+  // Sync inbox emails
+  for (const email of inboxEmails) {
     const sender = email.from?.emailAddress;
     const recipients = [
       ...(email.toRecipients || []).map((r: { emailAddress?: { name?: string; address?: string } }) => ({
@@ -230,15 +260,58 @@ export async function syncEmails() {
           body_text: email.body?.content ?? null,
           body_preview: email.bodyPreview ?? null,
           received_at: email.receivedDateTime,
+          conversation_id: email.conversationId ?? null,
           is_read: email.isRead ?? false,
+          folder: 'inbox',
           is_processed: false,
           review_status: 'pending',
         },
         { onConflict: 'ms_message_id', ignoreDuplicates: false }
       );
+    totalSynced++;
   }
 
-  return emails.length;
+  // Sync sent emails
+  for (const email of sentEmails) {
+    const sender = email.from?.emailAddress;
+    const recipients = [
+      ...(email.toRecipients || []).map((r: { emailAddress?: { name?: string; address?: string } }) => ({
+        name: r.emailAddress?.name,
+        address: r.emailAddress?.address,
+        type: 'to',
+      })),
+      ...(email.ccRecipients || []).map((r: { emailAddress?: { name?: string; address?: string } }) => ({
+        name: r.emailAddress?.name,
+        address: r.emailAddress?.address,
+        type: 'cc',
+      })),
+    ];
+
+    await supabase
+      .from('emails')
+      .upsert(
+        {
+          ms_message_id: email.id,
+          subject: email.subject ?? null,
+          sender: sender?.name ?? null,
+          sender_email: sender?.address ?? null,
+          recipients,
+          body_text: email.body?.content ?? null,
+          body_preview: email.bodyPreview ?? null,
+          received_at: email.receivedDateTime ?? email.sentDateTime,
+          sent_at: email.sentDateTime ?? null,
+          conversation_id: email.conversationId ?? null,
+          is_read: true,
+          folder: 'sent',
+          is_processed: false,
+          review_status: 'pending',
+        },
+        { onConflict: 'ms_message_id', ignoreDuplicates: false }
+      );
+    totalSynced++;
+  }
+
+  return totalSynced;
 }
 
 export async function syncCalendar() {
