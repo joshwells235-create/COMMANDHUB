@@ -82,6 +82,11 @@ CRITICAL: Do NOT create commitments for simply attending or showing up to the me
 - BAD: "Maintain sleep schedule", "Prepare sleep environment", "Prepare for deep work", "Confirm dinner"
 - SKIP ENTIRELY for recurring personal blocks (Sleep, Deep Work, Travel, workouts, meals). These are calendar context, not commitments.
 
+COMMITMENT QUALITY BAR — BE VERY SELECTIVE:
+Only create a commitment if it requires SPECIFIC, CONCRETE preparation work that Josh would genuinely forget without a reminder. For most routine meetings (especially recurring coaching sessions), Josh already knows how to prepare — do NOT create generic prep items like "review notes" or "prepare questions" unless there is something specific and unusual about this particular meeting.
+
+Create 0 commitments for most events. Only create 1-2 for events that clearly need specific preparation or deliverables. When in doubt, skip it.
+
 For prep_notes, give Josh specific, helpful preparation guidance — what to review, what questions to ask, what to bring up, what context to remember. This is his cheat sheet going into the meeting.
 
 Return JSON only:
