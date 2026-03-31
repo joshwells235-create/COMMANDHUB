@@ -396,31 +396,9 @@ export function CommitmentList({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
-                    <span className={cn('text-xs', isOverdue ? 'text-danger' : 'text-muted')}>
-                      {getCommitmentTypeLabel(c.commitment_type)}
-                    </span>
-                    <SourceBadge sourceType={c.source_type} />
-                    <span
-                      className="text-[10px] text-muted/60 tabular-nums"
-                      title={buildPriorityTitle(c)}
-                    >
-                      {c.priority_score}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setHistoryId(historyId === c.id ? null : c.id);
-                      }}
-                      className={cn(
-                        'p-1 rounded hover:bg-card-hover transition-colors',
-                        historyId === c.id ? 'text-primary' : 'text-muted/40 hover:text-muted'
-                      )}
-                      title="Activity history"
-                    >
-                      <History className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <span className={cn('text-[10px] flex-shrink-0 mt-1', isOverdue ? 'text-danger' : 'text-muted/60')}>
+                    {getCommitmentTypeLabel(c.commitment_type)}
+                  </span>
                 </button>
 
                 {isExpanded && showActions && !isEditing && (
@@ -428,6 +406,16 @@ export function CommitmentList({
                     {c.description && (
                       <p className="text-xs text-muted mb-2">{c.description}</p>
                     )}
+                    <div className="flex items-center gap-2 mb-2 text-[10px] text-muted/60">
+                      <SourceBadge sourceType={c.source_type} />
+                      <span className="tabular-nums" title={buildPriorityTitle(c)}>Priority: {c.priority_score}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setHistoryId(historyId === c.id ? null : c.id); }}
+                        className={cn('flex items-center gap-1 hover:text-muted transition-colors', historyId === c.id ? 'text-primary' : '')}
+                      >
+                        <History className="w-3 h-3" /> History
+                      </button>
+                    </div>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => onComplete(c.id)}

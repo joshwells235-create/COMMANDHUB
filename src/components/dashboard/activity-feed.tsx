@@ -32,14 +32,14 @@ const ACTION_LABELS: Record<string, string> = {
   uploaded: 'Uploaded',
 };
 
-export function ActivityFeed() {
+export function ActivityFeed({ limit = 12 }: { limit?: number }) {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchFeed() {
       try {
-        const res = await fetch('/api/activity?limit=12');
+        const res = await fetch(`/api/activity?limit=${limit}`);
         if (res.ok) {
           const data = await res.json();
           setItems(data);

@@ -1,6 +1,6 @@
 'use client';
 
-import { Calendar, MapPin, AlertTriangle, ExternalLink, Zap, FileText } from 'lucide-react';
+import { Calendar, MapPin, AlertTriangle, ExternalLink, Zap, FileText, CircleAlert } from 'lucide-react';
 import Link from 'next/link';
 import type { CalendarEvent } from '@/types/database';
 import { formatEventTime } from '@/lib/utils';
@@ -16,13 +16,19 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   personal: 'Personal',
 };
 
+interface OrgContext {
+  overdueCount: number;
+  openCount: number;
+}
+
 interface TodayEventsProps {
   events: CalendarEvent[];
   connected: boolean;
   loading: boolean;
+  orgContext?: Record<string, OrgContext>;
 }
 
-function EventCard({ event }: { event: CalendarEvent }) {
+function EventCard({ event, context }: { event: CalendarEvent; context?: OrgContext }) {
   const prepNotes = event.ai_analysis?.prep_notes;
   const eventType = event.ai_analysis?.event_type as string | undefined;
   const importance = event.ai_analysis?.importance as string | undefined;
@@ -60,13 +66,27 @@ function EventCard({ event }: { event: CalendarEvent }) {
               <p className="text-xs text-muted/80">{prepNotes}</p>
             </div>
           )}
+          {/* Client context line */}
+          {event.org_id && context && (context.overdueCount > 0 || context.openCount > 0) && (
+            <div className="mt-1.5 flex items-center gap-2 text-[10px]">
+              {context.overdueCount > 0 && (
+                <span className="text-danger flex items-center gap-0.5">
+                  <CircleAlert className="w-3 h-3" />
+                  {context.overdueCount} overdue
+                </span>
+              )}
+              {context.openCount > 0 && context.overdueCount === 0 && (
+                <span className="text-muted">{context.openCount} open items</span>
+              )}
+            </div>
+          )}
           {event.org_id && isPrepWorthy && (
             <Link
               href={`/prep/${event.org_id}`}
-              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/20 hover:border-amber-500/30 transition-colors"
+              className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/20 hover:border-amber-500/30 transition-colors"
             >
-              <Zap className="w-3.5 h-3.5" />
-              Generate Prep Brief
+              <Zap className="w-3 h-3" />
+              Prep
             </Link>
           )}
         </div>
@@ -75,7 +95,7 @@ function EventCard({ event }: { event: CalendarEvent }) {
   );
 }
 
-export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
+export function TodayEvents({ events, connected, loading, orgContext }: TodayEventsProps) {
   const today = format(new Date(), 'EEEE, MMM d');
 
   if (loading) {
@@ -133,7 +153,7 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
         ) : (
           <div className="bg-card rounded-lg divide-y divide-border overflow-hidden">
             {todayEvents.map((event) => (
-              <EventCard key={event.id} event={event} />
+              <EventCard key={event.id} event={event} context={event.org_id ? orgContext?.[event.org_id] : undefined} />
             ))}
           </div>
         )}
@@ -150,7 +170,7 @@ export function TodayEvents({ events, connected, loading }: TodayEventsProps) {
         ) : (
           <div className="bg-card rounded-lg divide-y divide-border overflow-hidden opacity-80">
             {tomorrowEvents.map((event) => (
-              <EventCard key={event.id} event={event} />
+              <EventCard key={event.id} event={event} context={event.org_id ? orgContext?.[event.org_id] : undefined} />
             ))}
           </div>
         )}
