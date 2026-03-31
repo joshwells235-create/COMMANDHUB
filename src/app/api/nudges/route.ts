@@ -3,9 +3,9 @@ import { createServerClient } from '@/lib/supabase/server';
 
 interface Nudge {
   id: string;
-  type: 'meeting_prep' | 'going_cold' | 'unreplied_emails' | 'overdue_promise' | 'stale_waiting' | 'renewal_approaching';
+  type: 'meeting_prep' | 'going_cold' | 'unreplied_emails' | 'overdue_promise' | 'stale_waiting' | 'renewal_approaching' | 'habit_reminder' | 'personal_due';
   score: number;
-  icon: 'calendar' | 'users' | 'mail' | 'alert-triangle' | 'clock';
+  icon: 'calendar' | 'users' | 'mail' | 'alert-triangle' | 'clock' | 'heart' | 'target';
   title: string;
   subtitle: string;
   action_type: 'navigate' | 'complete' | 'draft';
@@ -352,6 +352,88 @@ export async function GET(_request: NextRequest) {
         urgency: urgencyFromScore(score),
       });
     }
+
+    // --- 7. Habit Reminder: check if fitness goal is falling behind ---
+    try {
+      const weekStart = new Date(now);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      weekStart.setHours(0, 0, 0, 0);
+
+      const [goalsRes, logsRes] = await Promise.all([
+        supabase.from('josh_profile').select('profile_data').eq('profile_type', 'personal_goals').single(),
+        supabase.from('life_logs').select('tags').gte('logged_at', weekStart.toISOString()),
+      ]);
+
+      const goals = (goalsRes.data?.profile_data as { goals?: Array<Record<string, unknown>> })?.goals || [];
+      const weekLogs = logsRes.data || [];
+      const dayOfWeek = now.getDay(); // 0=Sun, 6=Sat
+
+      for (const goal of goals.filter(g => g.active && g.type === 'recurring' && g.frequency === 'weekly')) {
+        const tag = goal.tracking_tag as string;
+        const target = goal.target as number;
+        const current = weekLogs.filter(l => l.tags?.includes(tag)).length;
+        const expectedPace = Math.floor(target * (dayOfWeek / 7));
+
+        // Behind pace and at least 2 days since needed
+        if (current < expectedPace && dayOfWeek >= 2) {
+          const remaining = target - current;
+          const daysLeft = 7 - dayOfWeek;
+          // Higher score in evening/weekend when personal matters more
+          const hour = now.getHours();
+          const timeBonus = (hour >= 17 || dayOfWeek === 0 || dayOfWeek === 6) ? 15 : 0;
+          const score = Math.min(70, 35 + (expectedPace - current) * 10 + timeBonus);
+
+          nudges.push({
+            id: `habit_${goal.id}`,
+            type: 'habit_reminder',
+            score,
+            icon: 'heart',
+            title: `${goal.title}: ${current}/${target} this week — ${remaining} to go in ${daysLeft} days`,
+            subtitle: `You're behind pace. Can you fit one in today?`,
+            action_type: 'navigate',
+            action_url: '/',
+            org_id: null,
+            commitment_id: null,
+            urgency: remaining > daysLeft ? 'high' : 'medium',
+          });
+        }
+      }
+    } catch { /* personal nudges are non-critical */ }
+
+    // --- 8. Personal Due: personal commitments due soon ---
+    try {
+      const twoDaysOut = new Date(now.getTime() + 2 * 86400000);
+      const { data: personalDue } = await supabase
+        .from('commitments')
+        .select('id, title, due_date')
+        .eq('category', 'personal')
+        .in('status', ['pending', 'in_progress'])
+        .not('due_date', 'is', null)
+        .lte('due_date', twoDaysOut.toISOString())
+        .order('due_date', { ascending: true })
+        .limit(3);
+
+      for (const c of personalDue || []) {
+        const dueDate = new Date(c.due_date!);
+        const isOverdue = dueDate < now;
+        const isToday = dueDate.toDateString() === now.toDateString();
+        const score = isOverdue ? 55 : isToday ? 45 : 35;
+
+        nudges.push({
+          id: `personal_${c.id}`,
+          type: 'personal_due',
+          score,
+          icon: 'target',
+          title: c.title,
+          subtitle: isOverdue ? `Personal — ${Math.floor((now.getTime() - dueDate.getTime()) / 86400000)} days overdue` : isToday ? 'Personal — due today' : `Personal — due ${dueDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`,
+          action_type: 'navigate',
+          action_url: '/commitments',
+          org_id: null,
+          commitment_id: c.id,
+          urgency: isOverdue ? 'high' : isToday ? 'medium' : 'low',
+        });
+      }
+    } catch { /* personal nudges are non-critical */ }
 
     // Sort by score descending, return top 5
     nudges.sort((a, b) => b.score - a.score);

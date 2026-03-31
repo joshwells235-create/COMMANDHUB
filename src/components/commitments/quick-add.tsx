@@ -76,10 +76,18 @@ export function QuickAdd({ organizations, onSubmit, isOpen: externalOpen, onClos
       const parsedDate = parseDateFromText(title);
       const finalDue = dueDate || (parsedDate ? format(parsedDate, 'yyyy-MM-dd') : undefined);
 
+      // Infer category from org selection
+      const selectedOrgId = orgId || suggestedOrg || undefined;
+      const selectedOrg = selectedOrgId ? organizations.find(o => o.id === selectedOrgId) : null;
+      const category = selectedOrg?.is_own_business ? 'internal' as const
+        : selectedOrgId ? 'client' as const
+        : 'personal' as const;
+
       await onSubmit({
         title: title.trim(),
         commitment_type: commitmentType,
-        org_id: orgId || suggestedOrg || undefined,
+        category,
+        org_id: selectedOrgId,
         due_date: finalDue ? new Date(finalDue).toISOString() : undefined,
         owner: commitmentType === 'waiting_on' ? 'other' : 'josh',
       });
