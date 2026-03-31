@@ -339,6 +339,11 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
           if (discoveredOrg) contactOrgId = discoveredOrg.id;
         }
 
+        // NEVER auto-create contacts under the own business (LeadShift)
+        // Josh will manually add new employees
+        const targetOrg = orgs.find((o) => o.id === contactOrgId);
+        if (targetOrg?.is_own_business) continue;
+
         const { data: newContact, error: contactError } = await supabase
           .from('contacts')
           .insert({
