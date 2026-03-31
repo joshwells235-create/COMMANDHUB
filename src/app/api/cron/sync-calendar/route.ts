@@ -23,13 +23,29 @@ export async function GET(request: Request) {
 
     const supabase = createServerClient();
 
-    // Auto-analyze unprocessed calendar events (batch of 3 to avoid timeout)
-    const { data: unprocessed } = await supabase
+    // Auto-analyze unprocessed calendar events — prioritize next 48 hours
+    const fortyEightHours = new Date(Date.now() + 48 * 3600000).toISOString();
+    const { data: upcomingUnprocessed } = await supabase
       .from('calendar_events')
       .select('*')
       .eq('is_processed', false)
+      .lt('start_time', fortyEightHours)
       .order('start_time', { ascending: true })
-      .limit(3);
+      .limit(5);
+
+    // Fill remaining slots with older unprocessed events
+    let unprocessed = upcomingUnprocessed || [];
+    if (unprocessed.length < 5) {
+      const existingIds = unprocessed.map((e) => e.id);
+      const { data: olderUnprocessed } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('is_processed', false)
+        .not('id', 'in', `(${existingIds.map((id) => `'${id}'`).join(',') || "'none'"})`)
+        .order('start_time', { ascending: true })
+        .limit(5 - unprocessed.length);
+      if (olderUnprocessed) unprocessed = [...unprocessed, ...olderUnprocessed];
+    }
 
     let analyzed = 0;
     if (unprocessed && unprocessed.length > 0) {
