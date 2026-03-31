@@ -42,7 +42,14 @@ export function LifePulse() {
   );
   const hasData = fitnessGoal || personalDue.length > 0;
 
-  if (!hasData) return null;
+  if (!hasData) {
+    return (
+      <div className="bg-card/50 rounded-xl border border-border/50 px-4 py-2.5 flex items-center gap-3 text-xs">
+        <Heart className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+        <span className="text-muted">Track your life — tell the Brain: &quot;Log a workout&quot; or &quot;I want to work out 4x/week&quot;</span>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-card/50 rounded-xl border border-border/50 px-4 py-2.5 flex items-center gap-4 text-xs overflow-x-auto">
