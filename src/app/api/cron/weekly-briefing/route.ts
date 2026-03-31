@@ -353,6 +353,45 @@ Pace: ${currentQuarter.target ? Math.round((Number(currentQuarter.closed || 0) /
     const uniqueNextWeekOrgIds = [...new Set((nextWeekEvents || []).map((e) => e.org_id).filter(Boolean))];
 
     // ========================================
+    // PERSONAL LIFE DATA
+    // ========================================
+    const { data: weekLifeLogs } = await supabase
+      .from('life_logs')
+      .select('title, tags, logged_at')
+      .gte('logged_at', sevenDaysAgoStr)
+      .order('logged_at', { ascending: false });
+
+    const { data: goalsProfile } = await supabase
+      .from('josh_profile')
+      .select('profile_data')
+      .eq('profile_type', 'personal_goals')
+      .single();
+
+    const { data: personalCommitmentsWeek } = await supabase
+      .from('commitments')
+      .select('title, status, completed_at')
+      .eq('category', 'personal')
+      .or(`status.in.(pending,in_progress),and(status.eq.completed,completed_at.gte.${sevenDaysAgoStr})`);
+
+    const weekLogs = weekLifeLogs || [];
+    const fitnessCount = weekLogs.filter(l => l.tags?.includes('fitness')).length;
+    const goals = (goalsProfile?.profile_data as { goals?: Array<Record<string, unknown>> })?.goals || [];
+    const fitnessGoal = goals.find(g => g.active && g.tracking_tag === 'fitness');
+    const personalCompleted = (personalCommitmentsWeek || []).filter(c => c.status === 'completed').length;
+    const personalOpen = (personalCommitmentsWeek || []).filter(c => c.status !== 'completed').length;
+
+    const personalWeekText = [
+      fitnessGoal ? `Fitness: ${fitnessCount}/${fitnessGoal.target} workouts this week` : null,
+      personalCompleted > 0 ? `Personal items completed: ${personalCompleted}` : null,
+      personalOpen > 0 ? `Personal items still open: ${personalOpen}` : null,
+      ...goals.filter(g => g.active && g.type === 'milestone').map(g => {
+        const milestones = g.milestones as string[] | undefined;
+        const current = g.current_milestone as number;
+        return `Goal: ${g.title} — ${milestones?.[current] || 'In progress'}`;
+      }),
+    ].filter(Boolean).join('\n') || 'No personal tracking data this week.';
+
+    // ========================================
     // CALL CLAUDE
     // ========================================
     const client = new Anthropic();
@@ -396,6 +435,9 @@ ${nextWeekCommitmentsText}
 
 PIPELINE:
 ${pipelineText}
+
+PERSONAL LIFE (this week):
+${personalWeekText}
 ${revenueContextText ? `
 REVENUE CONTEXT:
 ${revenueContextText}` : ''}
@@ -444,15 +486,17 @@ Structure the email with these exact sections in this order:
 
 6. **Cross-Client Insight**: Based on ALL the data above, identify ONE meaningful pattern or observation across Josh's practice this week. This should be genuinely insightful — not obvious. For example: "Three of your four sessions this week involved scope discussions — you may be in a phase where clients are re-evaluating engagements" or "Your completion rate dropped but creation rate spiked — looks like you're in a planning phase." Use a purple left border for this card. 2-3 sentences max.
 
-7. **Revenue Pulse** (ONLY if REVENUE CONTEXT data is provided above): Show quarterly pace vs target with a simple text progress bar. List renewals due in the next 60 days with amounts. Flag any active business priorities that are time-sensitive. Purple left border. Keep it compact — 4-5 lines max.
+7. **Personal Scorecard** (ONLY if PERSONAL LIFE data is provided above): Green left border. Show fitness progress, personal items completed vs open, and milestone goal status. Brief and warm — not a report card. If no data, skip entirely.
 
-8. **Next Week Outlook**:
+8. **Revenue Pulse** (ONLY if REVENUE CONTEXT data is provided above): Show quarterly pace vs target with a simple text progress bar. List renewals due in the next 60 days with amounts. Flag any active business priorities that are time-sensitive. Purple left border. Keep it compact — 4-5 lines max.
+
+9. **Next Week Outlook**:
    - Calendar overview (events by day)
    - Commitments due next week
    - Suggested priorities based on what's overdue, what's due, and client health
    - If the week looks heavy, say so. If light, note the opportunity.
 
-9. **Footer**: Brief sign-off with a forward-looking one-liner. Contextual, not generic.
+10. **Footer**: Brief sign-off with a forward-looking one-liner. Contextual, not generic.
 
 Important rules:
 - If a section has no data, SKIP IT ENTIRELY

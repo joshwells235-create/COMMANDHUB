@@ -364,6 +364,55 @@ ${renewalsText}
 ${activePriorities ? `\nACTIVE BUSINESS PRIORITIES:\n${activePriorities.map(p => `- ${p}`).join('\n')}` : ''}`
       : '';
 
+    // --- Fetch personal life context ---
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+
+    const [lifeLogs, goalsProfile, personalCommitments, personalEvents] = await Promise.all([
+      supabase.from('life_logs').select('log_type, title, tags, logged_at')
+        .gte('logged_at', weekStart.toISOString()).order('logged_at', { ascending: false }),
+      supabase.from('josh_profile').select('profile_data').eq('profile_type', 'personal_goals').single(),
+      supabase.from('commitments').select('title, due_date, status, commitment_type')
+        .eq('category', 'personal').in('status', ['pending', 'in_progress']).order('due_date', { ascending: true }).limit(5),
+      supabase.from('calendar_events').select('subject, start_time, ai_analysis')
+        .gte('start_time', `${todayStr}T00:00:00`).lt('start_time', `${tomorrowStr}T00:00:00`)
+        .order('start_time', { ascending: true }),
+    ]);
+
+    // Build personal context for the briefing
+    const logs = lifeLogs.data || [];
+    const goals = (goalsProfile.data?.profile_data as { goals?: Array<Record<string, unknown>> })?.goals || [];
+    const pCommitments = personalCommitments.data || [];
+    const familyEvents = (personalEvents.data || []).filter(e => {
+      const analysis = e.ai_analysis as Record<string, unknown> | null;
+      return analysis?.event_type === 'personal' || analysis?.event_type === 'family';
+    });
+
+    const fitnessCount = logs.filter(l => l.tags?.includes('fitness')).length;
+    const fitnessGoal = goals.find(g => g.active && g.tracking_tag === 'fitness');
+    const fitnessTarget = (fitnessGoal?.target as number) || 0;
+
+    let personalContext = '';
+    if (fitnessTarget > 0 || pCommitments.length > 0 || familyEvents.length > 0) {
+      const lines: string[] = ['PERSONAL LIFE CONTEXT:'];
+      if (fitnessTarget > 0) lines.push(`Fitness: ${fitnessCount}/${fitnessTarget} workouts this week`);
+      if (familyEvents.length > 0) lines.push(`Personal events today: ${familyEvents.map(e => e.subject).join(', ')}`);
+      if (pCommitments.length > 0) {
+        lines.push(`Personal commitments:`);
+        for (const c of pCommitments) {
+          const due = c.due_date ? ` (due ${c.due_date.split('T')[0]})` : '';
+          lines.push(`- ${c.title}${due}`);
+        }
+      }
+      for (const g of goals.filter(g => g.active && g.type === 'milestone')) {
+        const milestones = g.milestones as string[] | undefined;
+        const current = g.current_milestone as number;
+        lines.push(`Goal: ${g.title} — ${milestones?.[current] || 'In progress'}${g.due_date ? ` (due ${g.due_date})` : ''}`);
+      }
+      personalContext = lines.join('\n');
+    }
+
     // --- Call Claude to generate the briefing ---
     const client = new Anthropic();
     const message = await client.messages.create({
@@ -372,9 +421,11 @@ ${activePriorities ? `\nACTIVE BUSINESS PRIORITIES:\n${activePriorities.map(p =>
       messages: [
         {
           role: 'user',
-          content: `You are Josh Wells' chief of staff. Generate his morning briefing email for ${todayStr} (${today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}). This is the first thing he reads at 7am over coffee on his phone. Make it genuinely useful, crisp, and actionable. Think of it as a daily digest from someone who deeply understands his practice.
+          content: `You are Josh Wells' chief of staff. Generate his morning briefing email for ${todayStr} (${today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}). This is the first thing he reads at 7am over coffee on his phone. Make it genuinely useful, crisp, and actionable. You know Josh's ENTIRE life — clients, business, and personal.
 
 NOTE: "Leadshift" / "LeadShift" is Josh's OWN business — not a client. Distinguish between internal LeadShift business activities (team meetings, sales strategy, ops) and client-facing work. LeadShift items should appear under internal/business sections, not mixed in with client work.
+
+${personalContext}
 
 TODAY'S SCHEDULE (${(events || []).length} events):
 ${eventsText}
@@ -441,13 +492,15 @@ Structure the email with these exact sections in this order:
 
 7. **Theme Alerts** (ONLY if CROSS-CLIENT THEME ALERTS data is provided above): Show urgent and pattern-level themes that span multiple clients. For each, show the theme name, severity badge (red for urgent, amber for pattern), which clients are affected, and the recommended action. If a coaching opportunity exists, highlight it. Keep this section compact — 2-3 alerts max.
 
-8. **Pipeline Watch** (ONLY if REVENUE CONTEXT data is provided above): Compact section showing quarterly revenue pace (closed vs target with a simple text progress indicator), renewals due this month with dollar amounts, and any active business priorities that are time-sensitive. Purple left border. Keep it to 3-4 lines max — just enough for Josh to know where he stands financially.
+8. **Your Life** (ONLY if PERSONAL LIFE CONTEXT is provided above): A brief personal check-in section with green left border. Show fitness progress (e.g., "3/4 workouts this week"), any personal commitments due today/this week, personal events today, and milestone goal status. Keep it warm and brief — 2-4 lines. This reminds Josh that Command Hub sees his whole life, not just work.
 
-9. **Week Ahead**: Compact preview of the next 7 days — group by day, show event name + client. Flag high-priority events (client coaching sessions, PI sessions, workshops) with a colored badge. This helps Josh mentally prepare and ensures nothing sneaks up on him. Show commitments due this week alongside the calendar. Only show if there are upcoming events.
+9. **Pipeline Watch** (ONLY if REVENUE CONTEXT data is provided above): Compact section showing quarterly revenue pace (closed vs target with a simple text progress indicator), renewals due this month with dollar amounts, and any active business priorities that are time-sensitive. Purple left border. Keep it to 3-4 lines max — just enough for Josh to know where he stands financially.
 
-10. **Replies Needed**: Emails awaiting response. Sort by urgency (high first). Show sender and subject. Only show if there are any.
+10. **Week Ahead**: Compact preview of the next 7 days — group by day, show event name + client. Flag high-priority events (client coaching sessions, PI sessions, workshops) with a colored badge. This helps Josh mentally prepare and ensures nothing sneaks up on him. Show commitments due this week alongside the calendar. Only show if there are upcoming events.
 
-11. **Footer**: Brief, grounding sign-off. One line. Not motivational-poster cheesy — more like a thoughtful colleague. Examples of the right tone: "You've got a solid handle on things." or "Big day ahead — start with the one thing." Keep it contextual to the actual data above.
+11. **Replies Needed**: Emails awaiting response. Sort by urgency (high first). Show sender and subject. Only show if there are any.
+
+12. **Footer**: Brief, grounding sign-off. One line. Not motivational-poster cheesy — more like a thoughtful colleague. Examples of the right tone: "You've got a solid handle on things." or "Big day ahead — start with the one thing." Keep it contextual to the actual data above.
 
 Important rules:
 - If a section has no data, SKIP IT ENTIRELY (no empty state messages except for schedule)
