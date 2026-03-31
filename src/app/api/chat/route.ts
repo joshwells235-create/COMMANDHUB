@@ -1390,7 +1390,7 @@ ${internalCommitments.length > 0 ? `\nINTERNAL LEADSHIFT TASKS (${internalCommit
           const prepNotes = aiData?.prep_notes ? ` | Prep: ${aiData.prep_notes}` : '';
           const eventType = aiData?.event_type ? ` [${aiData.event_type}]` : '';
           const importance = aiData?.importance === 'high' ? ' ⚡HIGH' : '';
-          return `- ${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}: ${e.subject || 'Untitled'}${eventType}${importance}${orgName ? ' (' + orgName + ')' : ''}${e.location ? ' @ ' + e.location : ''}${prepNotes}`;
+          return `- ${start.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric' })} ${start.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })}: ${e.subject || 'Untitled'}${eventType}${importance}${orgName ? ' (' + orgName + ')' : ''}${e.location ? ' @ ' + e.location : ''}${prepNotes}`;
         };
 
         if (thisWeek.length > 0) {
@@ -1474,7 +1474,7 @@ ${inboxEmails.map((e) => {
           const sentiment = ai?.sentiment && ai.sentiment !== 'neutral' ? ` [${ai.sentiment}]` : '';
           const intel = ai?.client_intelligence as Record<string, unknown> | null;
           const topics = Array.isArray(intel?.key_topics) ? ` | Topics: ${(intel.key_topics as string[]).join(', ')}` : '';
-          return `- ${new Date(e.received_at as string).toLocaleDateString()}: "${e.subject}" from ${e.sender}${orgName ? ' (' + orgName + ')' : ''}${urgency}${sentiment}${topics}${ai?.email_summary ? '\n  Summary: ' + ai.email_summary : ''}`;
+          return `- ${new Date(e.received_at as string).toLocaleDateString('en-US', { timeZone: 'America/New_York' })}: "${e.subject}" from ${e.sender}${orgName ? ' (' + orgName + ')' : ''}${urgency}${sentiment}${topics}${ai?.email_summary ? '\n  Summary: ' + ai.email_summary : ''}`;
         }).join('\n')}`);
       }
 
@@ -1483,7 +1483,7 @@ ${inboxEmails.map((e) => {
 ${sentEmails.map((e) => {
           const orgName = e.org_id ? emailOrgMap.get(e.org_id as string) : null;
           const ai = e.ai_extraction as Record<string, unknown> | null;
-          return `- ${new Date((e.sent_at || e.received_at) as string).toLocaleDateString()}: "${e.subject}" to ${Array.isArray(e.sender) ? e.sender : 'recipients'}${orgName ? ' (' + orgName + ')' : ''}${ai?.email_summary ? '\n  Summary: ' + ai.email_summary : ''}`;
+          return `- ${new Date((e.sent_at || e.received_at) as string).toLocaleDateString('en-US', { timeZone: 'America/New_York' })}: "${e.subject}" to ${Array.isArray(e.sender) ? e.sender : 'recipients'}${orgName ? ' (' + orgName + ')' : ''}${ai?.email_summary ? '\n  Summary: ' + ai.email_summary : ''}`;
         }).join('\n')}`);
       }
     }
@@ -1509,7 +1509,7 @@ ${sentEmails.map((e) => {
 ${replyEmails.map((e) => {
           const ai = e.ai_extraction as Record<string, unknown> | null;
           const urgency = ai?.reply_urgency || 'unknown';
-          return `- ${e.sender}: "${e.subject}" (${urgency}) — received ${new Date(e.received_at as string).toLocaleDateString()}`;
+          return `- ${e.sender}: "${e.subject}" (${urgency}) — received ${new Date(e.received_at as string).toLocaleDateString('en-US', { timeZone: 'America/New_York' })}`;
         }).join('\n')}`);
       }
     }
@@ -1569,7 +1569,7 @@ ${replyEmails.map((e) => {
       if (logs.length > 0) {
         personalLines.push(`\nRecent life logs (${logs.length} this week):`);
         for (const l of logs.slice(0, 5)) {
-          personalLines.push(`- ${l.title} [${l.tags?.join(', ') || l.log_type}] — ${new Date(l.logged_at).toLocaleDateString()}`);
+          personalLines.push(`- ${l.title} [${l.tags?.join(', ') || l.log_type}] — ${new Date(l.logged_at).toLocaleDateString('en-US', { timeZone: 'America/New_York' })}`);
         }
         personalLines.push(`Fitness this week: ${fitnessThisWeek}`);
       } else {
@@ -1625,7 +1625,7 @@ ${engagements.map((e) => {
       contextParts.push(`RECENT BRIEFINGS:
 ${recentBriefings.map((b) => {
         const summary = b.summary as Record<string, unknown> | null;
-        return `- ${b.briefing_type} briefing (${new Date(b.generated_at).toLocaleDateString()}): ${summary ? JSON.stringify(summary).substring(0, 300) : 'No summary'}`;
+        return `- ${b.briefing_type} briefing (${new Date(b.generated_at).toLocaleDateString('en-US', { timeZone: 'America/New_York' })}): ${summary ? JSON.stringify(summary).substring(0, 300) : 'No summary'}`;
       }).join('\n')}`);
     }
 
@@ -1634,7 +1634,7 @@ ${recentBriefings.map((b) => {
       contextParts.push(`RECENT ACTIVITY (last ${recentActivity.length} actions):
 ${recentActivity.map((a) => {
         const c = a.commitment as unknown as { title?: string } | null;
-        return `- ${a.action}: ${c?.title || 'unknown'} (${new Date(a.created_at).toLocaleDateString()})`;
+        return `- ${a.action}: ${c?.title || 'unknown'} (${new Date(a.created_at).toLocaleDateString('en-US', { timeZone: 'America/New_York' })})`;
       }).join('\n')}`);
     }
 
@@ -2015,8 +2015,10 @@ ${matchedCommitments.map((c) => `- [id:${c.id}] [${c.owner}] ${c.title} (${c.com
       }
     }
 
-    // Build system prompt
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Build system prompt — use Eastern Time for Josh
+    const nowET = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+    const todayStr = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const currentTimeET = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
     const mentionedOrgNames = mentionedOrgs.map((o) => o.name).join(', ');
     const systemPrompt = `You are Command Hub, Josh Wells's AI chief of staff and strategic advisor at LeadShift.
 Josh Wells is a Partner and top revenue producer at LeadShift, a leadership development consulting firm founded in 1997. He manages an ~$850K annual book of business across ~60 clients. His work spans executive coaching, leadership academies (Leadership Academy/Elite5, ALIGN), PI behavioral assessments, team workshops (PSL, PUP, DYTT, Change/Tough Conversations), certification (PIPC/DRWT), and fractional advisory roles. His proprietary framework "Language Leaks" (Agency/Identity/Worth lenses) is his distinctive intellectual contribution. Other core frameworks: Signal Model, Predictive Index, Five Dysfunctions of a Team, EQ-i 2.0.
@@ -2025,7 +2027,7 @@ You have FULL ACCESS to Josh's entire database: every commitment, every session 
 
 Josh also uses Command Hub for personal commitments and transcripts. These have category='personal'. Handle these naturally.
 
-Today's date: ${todayStr}
+Today: ${todayStr}, ${currentTimeET} Eastern Time
 ${mentionedOrgNames ? `Client(s) mentioned in this message: ${mentionedOrgNames}` : ''}
 
 === DATA CONTEXT ===
