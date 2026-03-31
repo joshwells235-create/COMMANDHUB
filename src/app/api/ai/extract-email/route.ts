@@ -431,11 +431,16 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
 
       // Deduplication: check for existing active commitment with similar title for same org
       const dedupTitle = commitment.title.toLowerCase().trim();
-      const { data: duplicates } = await supabase
+      let dedupQuery = supabase
         .from('commitments')
         .select('id, title')
-        .in('status', ['pending', 'in_progress', 'waiting'])
-        .or(matchedOrgId ? `org_id.eq.${matchedOrgId}` : 'org_id.is.null');
+        .in('status', ['pending', 'in_progress', 'waiting']);
+
+      if (matchedOrgId) {
+        dedupQuery = dedupQuery.eq('org_id', matchedOrgId);
+      }
+
+      const { data: duplicates } = await dedupQuery;
 
       const isDuplicate = duplicates?.some((d) => {
         const existingTitle = d.title.toLowerCase().trim();

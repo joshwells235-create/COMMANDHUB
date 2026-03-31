@@ -69,9 +69,9 @@ export async function GET() {
       if (!email.conversation_id) return true; // No conversation tracking, keep it
       const latestReply = latestReplyByConv.get(email.conversation_id);
       if (!latestReply) return true; // Josh hasn't replied in this thread
-      // If Josh replied AFTER this email, it no longer needs a reply
+      // If Josh replied AFTER this email, it no longer needs a reply — exclude it
       const emailDate = new Date(email.received_at);
-      return latestReply < emailDate;
+      return emailDate > latestReply; // Only keep if email came AFTER Josh's last reply
     });
 
     return NextResponse.json(needsReply);
