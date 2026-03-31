@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const supabase = createServerClient();
 
     // Fetch everything in parallel for speed
-    const [orgRes, transcriptRes, commitmentsRes, contactsRes, sessionComparisonRes, emailsRes] =
+    const [orgRes, transcriptRes, commitmentsRes, contactsRes, sessionComparisonRes, emailsRes, engagementsRes] =
       await Promise.all([
         supabase
           .from('organizations')
@@ -62,6 +62,12 @@ export async function GET(request: NextRequest) {
           .eq('is_processed', true)
           .order('received_at', { ascending: false })
           .limit(10),
+        supabase
+          .from('engagements')
+          .select('name, type, status, value_amount, start_date, end_date')
+          .eq('org_id', orgId)
+          .order('start_date', { ascending: false })
+          .limit(15),
       ]);
 
     const org = orgRes.data;
@@ -159,6 +165,17 @@ ${t.recommended_focus_next_session ? `Recommended focus for next session: ${t.re
 Client: ${org.name} (${org.industry || 'Unknown industry'})
 Contacts: ${contactsList}
 Status: ${org.status}, Strategic value: ${org.strategic_value}
+${(() => {
+  const engs = engagementsRes.data || [];
+  if (engs.length === 0) return '';
+  const totalRev = engs.reduce((s, e) => s + (Number(e.value_amount) || 0), 0);
+  const activeEngs = engs.filter(e => e.status === 'active' || e.status === 'pending');
+  const engList = engs.slice(0, 8).map(e => `  - ${e.name} ($${Number(e.value_amount || 0).toLocaleString()}, ${e.type || 'Other'}, ${e.status})`).join('\n');
+  return `\nENGAGEMENT/REVENUE CONTEXT:
+Total revenue: $${totalRev.toLocaleString()} across ${engs.length} deals
+Active/pipeline: ${activeEngs.length} engagements
+Recent deals:\n${engList}`;
+})()}
 
 ${sessionHistoryParts.length > 0 ? `SESSION HISTORY (most recent first):\n${sessionHistoryParts.join('\n\n')}` : 'No previous sessions recorded.'}
 

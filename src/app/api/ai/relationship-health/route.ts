@@ -16,6 +16,11 @@ interface OrgHealth {
   completion_rate: number;
   trend: 'improving' | 'stable' | 'declining';
   alert: string | null;
+  revenue_context?: {
+    total_revenue: number;
+    active_engagements: number;
+    next_renewal: string | null;
+  };
 }
 
 function scoreStatus(score: number): OrgHealth['status'] {
@@ -84,7 +89,7 @@ export async function GET() {
     const ninetyDaysAgo = new Date(now);
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-    const [transcriptsRes, commitmentsRes] = await Promise.all([
+    const [transcriptsRes, commitmentsRes, engagementsRes] = await Promise.all([
       supabase
         .from('transcripts')
         .select('org_id, transcript_date')
@@ -95,10 +100,29 @@ export async function GET() {
         .from('commitments')
         .select('org_id, status, due_date')
         .in('org_id', orgIds),
+      supabase
+        .from('engagements')
+        .select('org_id, value_amount, status, end_date')
+        .in('org_id', orgIds),
     ]);
 
     const transcripts = transcriptsRes.data || [];
     const commitments = commitmentsRes.data || [];
+
+    // Aggregate engagement revenue by org
+    const engagementsByOrg = new Map<string, { total: number; active: number; nextRenewal: string | null }>();
+    for (const e of engagementsRes.data || []) {
+      if (!e.org_id) continue;
+      if (!engagementsByOrg.has(e.org_id)) engagementsByOrg.set(e.org_id, { total: 0, active: 0, nextRenewal: null });
+      const entry = engagementsByOrg.get(e.org_id)!;
+      entry.total += Number(e.value_amount) || 0;
+      if (e.status === 'active' || e.status === 'pending') {
+        entry.active += 1;
+        if (e.end_date) {
+          if (!entry.nextRenewal || e.end_date < entry.nextRenewal) entry.nextRenewal = e.end_date;
+        }
+      }
+    }
 
     // Group by org
     const transcriptsByOrg = new Map<string, { transcript_date: string }[]>();
@@ -176,6 +200,8 @@ export async function GET() {
       if (recentSessions > priorSessions) trend = 'improving';
       else if (recentSessions < priorSessions) trend = 'declining';
 
+      const engData = engagementsByOrg.get(org.id);
+
       return {
         org_id: org.id,
         org_name: org.name,
@@ -187,6 +213,11 @@ export async function GET() {
         completion_rate: completionRate,
         trend,
         alert: buildAlert(daysSinceContact === 999 ? 999 : daysSinceContact, overdue),
+        revenue_context: engData ? {
+          total_revenue: Math.round(engData.total),
+          active_engagements: engData.active,
+          next_renewal: engData.nextRenewal,
+        } : undefined,
       };
     });
 

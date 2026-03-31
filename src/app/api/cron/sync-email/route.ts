@@ -4,7 +4,7 @@ import { syncEmails } from '@/lib/microsoft-graph';
 import { extractCommitmentsFromEmail } from '@/app/api/ai/extract-email/route';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       .select('*')
       .eq('is_processed', false)
       .order('received_at', { ascending: true })
-      .limit(5);
+      .limit(15);
 
     if (fetchError) {
       console.error('Error fetching unprocessed emails:', fetchError);

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { getBusinessContext } from '@/lib/business-context';
 import { sendEmail } from '@/lib/resend';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
@@ -310,6 +311,38 @@ Completion rate: ${commitmentsCreatedCount > 0 ? Math.round((commitmentsComplete
       return `- ${e.name}${org ? ` (${org.name})` : ''}: $${(e.value_amount || 0).toLocaleString()}`;
     }).join('\n') || 'No active pipeline items.';
 
+    // Revenue context from business_context profile
+    const businessCtx = await getBusinessContext(supabase);
+    const bizProfile = businessCtx.profile as Record<string, unknown> | null;
+    const revenueModel = bizProfile?.revenue_model as Record<string, unknown> | undefined;
+    const currentQuarter = revenueModel?.current_quarter as Record<string, unknown> | undefined;
+    const activePriorities = bizProfile?.active_priorities as string[] | undefined;
+
+    // Renewals coming due in next 60 days
+    const sixtyDaysOut = new Date(now.getTime() + 60 * 86400000).toISOString();
+    const { data: upcomingRenewals } = await supabase
+      .from('engagements')
+      .select('name, value_amount, end_date, organizations(name)')
+      .eq('status', 'pending')
+      .lte('end_date', sixtyDaysOut)
+      .gte('end_date', now.toISOString())
+      .order('end_date', { ascending: true })
+      .limit(10);
+
+    const renewalText = (upcomingRenewals || []).map((r) => {
+      const org = r.organizations as unknown as { name: string } | null;
+      return `- ${r.name}${org ? ` (${org.name})` : ''}: $${Number(r.value_amount || 0).toLocaleString()} due ${r.end_date}`;
+    }).join('\n') || 'No renewals in the next 60 days.';
+
+    const revenueContextText = currentQuarter
+      ? `Quarterly target: $${Number(currentQuarter.target || 0).toLocaleString()}
+Closed this quarter: $${Number(currentQuarter.closed || 0).toLocaleString()}
+Gap: $${Number(currentQuarter.gap || 0).toLocaleString()}
+Pace: ${currentQuarter.target ? Math.round((Number(currentQuarter.closed || 0) / Number(currentQuarter.target)) * 100) : 0}%`
+      : '';
+
+    const prioritiesText = (activePriorities || []).map((p) => `- ${p}`).join('\n') || '';
+
     // All transcripts this week for cross-client insights
     const sessionClientsThisWeek = [...new Set((weekTranscripts || []).map((t) => {
       const org = t.organizations as unknown as { id: string; name: string } | null;
@@ -362,6 +395,15 @@ ${nextWeekCommitmentsText}
 
 PIPELINE:
 ${pipelineText}
+${revenueContextText ? `
+REVENUE CONTEXT:
+${revenueContextText}` : ''}
+${renewalText !== 'No renewals in the next 60 days.' ? `
+RENEWALS DUE (next 60 days):
+${renewalText}` : ''}
+${prioritiesText ? `
+ACTIVE BUSINESS PRIORITIES:
+${prioritiesText}` : ''}
 
 Generate the email as complete HTML with inline CSS. The design MUST follow these rules:
 - Dark theme: background #0f172a, card backgrounds #1e293b, text #e2e8f0, muted text #94a3b8
@@ -401,13 +443,15 @@ Structure the email with these exact sections in this order:
 
 6. **Cross-Client Insight**: Based on ALL the data above, identify ONE meaningful pattern or observation across Josh's practice this week. This should be genuinely insightful — not obvious. For example: "Three of your four sessions this week involved scope discussions — you may be in a phase where clients are re-evaluating engagements" or "Your completion rate dropped but creation rate spiked — looks like you're in a planning phase." Use a purple left border for this card. 2-3 sentences max.
 
-7. **Next Week Outlook**:
+7. **Revenue Pulse** (ONLY if REVENUE CONTEXT data is provided above): Show quarterly pace vs target with a simple text progress bar. List renewals due in the next 60 days with amounts. Flag any active business priorities that are time-sensitive. Purple left border. Keep it compact — 4-5 lines max.
+
+8. **Next Week Outlook**:
    - Calendar overview (events by day)
    - Commitments due next week
    - Suggested priorities based on what's overdue, what's due, and client health
    - If the week looks heavy, say so. If light, note the opportunity.
 
-8. **Footer**: Brief sign-off with a forward-looking one-liner. Contextual, not generic.
+9. **Footer**: Brief sign-off with a forward-looking one-liner. Contextual, not generic.
 
 Important rules:
 - If a section has no data, SKIP IT ENTIRELY

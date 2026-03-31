@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server';
 
 interface Nudge {
   id: string;
-  type: 'meeting_prep' | 'going_cold' | 'unreplied_emails' | 'overdue_promise' | 'stale_waiting';
+  type: 'meeting_prep' | 'going_cold' | 'unreplied_emails' | 'overdue_promise' | 'stale_waiting' | 'renewal_approaching';
   score: number;
   icon: 'calendar' | 'users' | 'mail' | 'alert-triangle' | 'clock';
   title: string;
@@ -310,6 +310,39 @@ export async function GET(_request: NextRequest) {
           urgency: urgencyFromScore(score),
         });
       }
+    }
+
+    // --- 6. Renewal Approaching: engagements with end_date within 30 days ---
+    const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const { data: approachingRenewals } = await supabase
+      .from('engagements')
+      .select('id, name, value_amount, end_date, org_id, organizations(name)')
+      .eq('status', 'pending')
+      .gte('end_date', now.toISOString())
+      .lte('end_date', thirtyDaysOut.toISOString())
+      .order('end_date', { ascending: true })
+      .limit(5);
+
+    for (const renewal of approachingRenewals || []) {
+      if (!renewal.end_date) continue;
+      const daysUntil = daysBetween(now, new Date(renewal.end_date));
+      const amount = Number(renewal.value_amount) || 0;
+      const orgName = (renewal.organizations as unknown as { name: string } | null)?.name || 'Unknown';
+      const score = Math.min(90, 60 + (30 - daysUntil) * 2 + (amount > 10000 ? 10 : 0));
+
+      nudges.push({
+        id: `renewal_${renewal.id}`,
+        type: 'renewal_approaching',
+        score,
+        icon: 'calendar',
+        title: `${orgName} renewal due in ${daysUntil} days — $${amount.toLocaleString()}`,
+        subtitle: renewal.name,
+        action_type: 'navigate',
+        action_url: renewal.org_id ? `/clients/${renewal.org_id}` : '/commitments',
+        org_id: renewal.org_id,
+        commitment_id: null,
+        urgency: urgencyFromScore(score),
+      });
     }
 
     // Sort by score descending, return top 5
