@@ -40,7 +40,10 @@ export function WaitingOnList({ commitments, onReceived }: WaitingOnListProps) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm leading-tight">
                   {c.category === 'personal' && (
-                    <span className="inline-block px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 text-[10px] font-medium uppercase tracking-wide mr-1.5 align-middle">Personal</span>
+                    <span className="inline-block px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-medium mr-1.5 align-middle">Personal</span>
+                  )}
+                  {c.category === 'internal' && (
+                    <span className="inline-block px-1 py-0.5 rounded bg-violet-500/15 text-violet-400 text-[10px] font-medium mr-1.5 align-middle">Internal</span>
                   )}
                   <span className="font-medium">{c.other_party || 'Someone'}</span>
                   <span className="text-muted">: {c.title}</span>

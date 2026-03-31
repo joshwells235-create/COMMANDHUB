@@ -295,7 +295,10 @@ export function NextUpCard({ commitment, onComplete, onSnooze, onCancel, onUpdat
         {/* Meta row */}
         <div className="flex flex-wrap items-center gap-2 mt-2 text-sm">
           {commitment.category === 'personal' && (
-            <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 text-[11px] font-medium uppercase tracking-wide">Personal</span>
+            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[11px] font-medium">Personal</span>
+          )}
+          {commitment.category === 'internal' && (
+            <span className="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 text-[11px] font-medium">Internal</span>
           )}
           {commitment.organization && (
             <span className="text-muted">{commitment.organization.name}</span>
