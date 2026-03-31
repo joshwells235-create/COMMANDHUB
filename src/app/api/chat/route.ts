@@ -1222,29 +1222,32 @@ export async function POST(request: NextRequest) {
     }
 
     if (commitments && commitments.length > 0) {
-      const overdueItems = commitments.filter(
+      // Separate client commitments from internal LeadShift ones
+      const ownBizIds = new Set(orgList.filter((o) => o.is_own_business).map((o) => o.id));
+      const clientCommitments = commitments.filter((c) => !c.org_id || !ownBizIds.has(c.org_id));
+      const internalCommitments = commitments.filter((c) => c.org_id && ownBizIds.has(c.org_id));
+
+      const overdueItems = clientCommitments.filter(
         (c) => c.due_date && new Date(c.due_date) < new Date() && c.status !== 'waiting'
       );
-      const dueToday = commitments.filter((c) => {
+      const dueToday = clientCommitments.filter((c) => {
         if (!c.due_date) return false;
         const d = new Date(c.due_date);
         const now = new Date();
         return d.toDateString() === now.toDateString();
       });
 
-      contextParts.push(`COMMITMENTS (${commitments.length} open):
+      const formatCmt = (c: typeof commitments[0]) => {
+        const orgName = c.org_id ? cmtOrgMap.get(c.org_id) : null;
+        return `- [id:${c.id}] [${c.owner === 'josh' ? 'Josh' : 'Other'}] ${c.title} (${c.commitment_type}${c.due_date ? ', due ' + c.due_date : ''}${orgName ? ', ' + orgName : ''})`;
+      };
+
+      contextParts.push(`CLIENT COMMITMENTS (${clientCommitments.length} open):
 Top priorities:
-${commitments
-  .slice(0, 10)
-  .map(
-    (c) => {
-      const orgName = c.org_id ? cmtOrgMap.get(c.org_id) : null;
-      return `- [id:${c.id}] [${c.owner === 'josh' ? 'Josh' : 'Other'}] ${c.title} (${c.commitment_type}${c.due_date ? ', due ' + c.due_date : ''}${orgName ? ', ' + orgName : ''})`;
-    }
-  )
-  .join('\n')}
+${clientCommitments.slice(0, 10).map(formatCmt).join('\n')}
 ${overdueItems.length > 0 ? `\nOVERDUE (${overdueItems.length}): ${overdueItems.map((c) => `${c.title} [id:${c.id}]`).join(', ')}` : ''}
-${dueToday.length > 0 ? `\nDUE TODAY (${dueToday.length}): ${dueToday.map((c) => `${c.title} [id:${c.id}]`).join(', ')}` : ''}`);
+${dueToday.length > 0 ? `\nDUE TODAY (${dueToday.length}): ${dueToday.map((c) => `${c.title} [id:${c.id}]`).join(', ')}` : ''}
+${internalCommitments.length > 0 ? `\nINTERNAL LEADSHIFT TASKS (${internalCommitments.length}): ${internalCommitments.slice(0, 5).map((c) => `${c.title} [id:${c.id}]`).join(', ')}${internalCommitments.length > 5 ? ` ... and ${internalCommitments.length - 5} more` : ''}` : ''}`);
     }
 
     // Fetch calendar events with AI analysis (prep notes, event type)

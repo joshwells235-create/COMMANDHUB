@@ -16,12 +16,14 @@ interface DaySummaryProps {
 export function DaySummary({ commitments, waitingOn, events, needsReplyCount, pipelineSnapshot }: DaySummaryProps) {
   const now = new Date();
 
-  // Calculate overdue with org context
-  const overdue = commitments.filter((c) => c.due_date && new Date(c.due_date) < now && !isToday(new Date(c.due_date)));
+  // Calculate overdue with org context — separate client vs internal
+  const allOverdue = commitments.filter((c) => c.due_date && new Date(c.due_date) < now && !isToday(new Date(c.due_date)));
+  const overdue = allOverdue.filter((c) => !(c.organization as { is_own_business?: boolean } | undefined)?.is_own_business);
+  const internalOverdue = allOverdue.length - overdue.length;
   const dueToday = commitments.filter((c) => c.due_date && isToday(new Date(c.due_date)));
   const todayEvents = events.filter((e) => isToday(new Date(e.start_time)));
 
-  // Group overdue by org for context
+  // Group overdue by org for context (client orgs only)
   const overdueByOrg: Record<string, number> = {};
   for (const c of overdue) {
     const orgName = (c.organization as { name: string } | undefined)?.name || 'Unassigned';
@@ -42,6 +44,12 @@ export function DaySummary({ commitments, waitingOn, events, needsReplyCount, pi
       text: `${overdue.length} overdue${orgDetail}`,
       color: 'text-danger',
       href: '/commitments?view=overdue',
+    });
+  }
+  if (internalOverdue > 0) {
+    parts.push({
+      text: `${internalOverdue} internal`,
+      color: 'text-muted',
     });
   }
 
