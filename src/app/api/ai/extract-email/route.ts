@@ -364,7 +364,7 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
             email: discovered.email?.trim() || null,
             role: discovered.apparent_role || null,
             org_id: contactOrgId,
-            category: 'business',
+            category: 'business' as const,
             relationship_type: 'discovered',
             notes: 'Auto-discovered from email',
           })
@@ -464,10 +464,16 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
 
       if (isDuplicate) continue;
 
+      // Derive commitment category from email classification
+      const commitCategory = extraction.email_category === 'internal' ? 'internal'
+        : extraction.email_category === 'personal' ? 'personal'
+        : 'client';
+
       await supabase.from('commitments').insert({
         title: commitment.title,
         description: commitment.description,
         commitment_type: commitment.commitment_type,
+        category: commitCategory,
         owner: commitment.owner || 'josh',
         other_party: commitment.other_party,
         due_date: commitment.suggested_due || null,

@@ -385,10 +385,13 @@ export function CommitmentList({
                     <p className="text-sm font-medium leading-tight truncate">{c.title}</p>
                     <div className="flex flex-wrap items-center gap-1.5 mt-1 text-xs text-muted">
                       {c.category === 'personal' && (
-                        <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 text-[10px] font-medium uppercase tracking-wide">Personal</span>
+                        <span className="px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-medium">Personal</span>
+                      )}
+                      {c.category === 'internal' && (
+                        <span className="px-1 py-0.5 rounded bg-violet-500/15 text-violet-400 text-[10px] font-medium">Internal</span>
                       )}
                       {c.organization && <span>{c.organization.name}</span>}
-                      {(c.organization || c.category === 'personal') && (dueLabel || ageLabel) && <span>&middot;</span>}
+                      {(c.organization || c.category !== 'client') && (dueLabel || ageLabel) && <span>&middot;</span>}
                       {dueLabel && (
                         <span className={cn(isOverdue && 'text-danger')}>{dueLabel}</span>
                       )}

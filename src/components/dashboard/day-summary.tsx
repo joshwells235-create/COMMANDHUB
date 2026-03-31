@@ -16,16 +16,18 @@ interface DaySummaryProps {
 export function DaySummary({ commitments, waitingOn, events, needsReplyCount, pipelineSnapshot }: DaySummaryProps) {
   const now = new Date();
 
-  // Calculate overdue with org context — separate client vs internal
+  // Calculate overdue by context (client / internal / personal)
   const allOverdue = commitments.filter((c) => c.due_date && new Date(c.due_date) < now && !isToday(new Date(c.due_date)));
-  const overdue = allOverdue.filter((c) => !(c.organization as { is_own_business?: boolean } | undefined)?.is_own_business);
-  const internalOverdue = allOverdue.length - overdue.length;
+  const clientOverdue = allOverdue.filter((c) => c.category === 'client' || (!c.category && !(c.organization as { is_own_business?: boolean } | undefined)?.is_own_business));
+  const internalOverdue = allOverdue.filter((c) => c.category === 'internal').length;
+  const personalOverdue = allOverdue.filter((c) => c.category === 'personal').length;
+  const overdue = clientOverdue; // "overdue" = client overdue for org breakdown
   const dueToday = commitments.filter((c) => c.due_date && isToday(new Date(c.due_date)));
   const todayEvents = events.filter((e) => isToday(new Date(e.start_time)));
 
-  // Group overdue by org for context (client orgs only)
+  // Group client overdue by org for context
   const overdueByOrg: Record<string, number> = {};
-  for (const c of overdue) {
+  for (const c of clientOverdue) {
     const orgName = (c.organization as { name: string } | undefined)?.name || 'Unassigned';
     overdueByOrg[orgName] = (overdueByOrg[orgName] || 0) + 1;
   }
@@ -46,11 +48,12 @@ export function DaySummary({ commitments, waitingOn, events, needsReplyCount, pi
       href: '/commitments?view=overdue',
     });
   }
-  if (internalOverdue > 0) {
-    parts.push({
-      text: `${internalOverdue} internal`,
-      color: 'text-muted',
-    });
+  if (internalOverdue > 0 || personalOverdue > 0) {
+    const extras = [
+      internalOverdue > 0 ? `${internalOverdue} internal` : '',
+      personalOverdue > 0 ? `${personalOverdue} personal` : '',
+    ].filter(Boolean).join(', ');
+    parts.push({ text: extras, color: 'text-muted' });
   }
 
   if (dueToday.length > 0) {

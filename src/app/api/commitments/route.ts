@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
         title: body.title,
         description: body.description ?? null,
         commitment_type: body.commitment_type,
-        category: body.category ?? 'business',
+        category: body.category ?? 'client',
         org_id: body.org_id ?? null,
         contact_id: body.contact_id ?? null,
         engagement_id: body.engagement_id ?? null,
