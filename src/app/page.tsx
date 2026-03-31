@@ -8,6 +8,8 @@ import { useOrganizations } from '@/lib/hooks/use-organizations';
 import { useCalendarEvents } from '@/lib/hooks/use-calendar';
 import { useReviewQueue } from '@/lib/hooks/use-review-queue';
 import { useNeedsReply } from '@/lib/hooks/use-needs-reply';
+import { LifePulse } from '@/components/dashboard/life-pulse';
+import { getTimeMode } from '@/lib/time-mode';
 import { NextUpCard } from '@/components/commitments/next-up-card';
 import { CommitmentList } from '@/components/commitments/commitment-list';
 import { WaitingOnList } from '@/components/commitments/waiting-on-list';
@@ -217,10 +219,13 @@ export default function FocusView() {
             pipelineSnapshot={pipelineSnapshot}
           />
 
-          {/* 2. Proactive Intel */}
+          {/* 2. Life Pulse — personal goals, fitness, personal items */}
+          <LifePulse />
+
+          {/* 3. Proactive Intel */}
           <ProactiveNudges />
 
-          {/* 3. Next Up Card */}
+          {/* 4. Next Up Card */}
           <div className="bg-card rounded-xl border border-border next-up-border p-4 relative animated-gradient-border">
             <NextUpCard
               commitment={nextUp}
@@ -305,6 +310,9 @@ export default function FocusView() {
             needsReplyCount={needsReplyEmails.length}
             pipelineSnapshot={pipelineSnapshot}
           />
+
+          {/* Life Pulse */}
+          <LifePulse />
 
           <div className="grid lg:grid-cols-5 gap-4">
           {/* Left column - "Your Day" */}
