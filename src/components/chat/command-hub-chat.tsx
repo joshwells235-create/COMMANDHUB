@@ -27,10 +27,10 @@ const MAX_STORED_MESSAGES = 50;
 const SUGGESTED_PROMPTS = [
   "What should I do next?",
   "Who needs my attention?",
-  "How are things going at...",
+  "How am I doing this week?",
   "Prep me for my next meeting",
+  "Log a workout",
   "What am I forgetting?",
-  "What happened this week?",
 ];
 
 // --------------------------------------------------------------------------
