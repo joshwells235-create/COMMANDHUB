@@ -1083,6 +1083,101 @@ Recent transcripts: ${(orgTranscripts || []).map((t) => `${t.title} (${t.transcr
           break;
         }
 
+        case 'log_life_event': {
+          const d = action.data as { log_type?: string; title?: string; description?: string; tags?: string[]; metadata?: Record<string, unknown> };
+          if (!d.title) {
+            results.push({ type: action.type, success: false, details: 'Missing title' });
+            break;
+          }
+          const { error } = await supabase.from('life_logs').insert({
+            log_type: d.log_type || 'habit',
+            title: d.title,
+            description: d.description || null,
+            tags: d.tags || [],
+            metadata: d.metadata || null,
+            logged_at: new Date().toISOString(),
+          });
+          if (error) {
+            results.push({ type: action.type, success: false, details: error.message });
+          } else {
+            results.push({ type: action.type, success: true, details: `Logged: ${d.title}` });
+          }
+          break;
+        }
+
+        case 'set_goal': {
+          const d = action.data as { title?: string; type?: string; frequency?: string; target?: number; tracking_tag?: string; due_date?: string; milestones?: string[] };
+          if (!d.title) {
+            results.push({ type: action.type, success: false, details: 'Missing goal title' });
+            break;
+          }
+          const { data: existingGoals } = await supabase
+            .from('josh_profile')
+            .select('id, profile_data')
+            .eq('profile_type', 'personal_goals')
+            .single();
+
+          const goalId = d.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          const newGoal = {
+            id: goalId,
+            title: d.title,
+            type: d.type || 'recurring',
+            frequency: d.frequency || 'weekly',
+            target: d.target || 1,
+            tracking_tag: d.tracking_tag || goalId,
+            due_date: d.due_date || null,
+            milestones: d.milestones || null,
+            current_milestone: 0,
+            active: true,
+          };
+
+          if (existingGoals) {
+            const current = existingGoals.profile_data as { goals?: Array<Record<string, unknown>> };
+            const goals = current.goals || [];
+            goals.push(newGoal);
+            await supabase.from('josh_profile').update({
+              profile_data: { ...current, goals, updated_at: new Date().toISOString() },
+            }).eq('id', existingGoals.id);
+          } else {
+            await supabase.from('josh_profile').insert({
+              profile_type: 'personal_goals',
+              profile_data: { goals: [newGoal], updated_at: new Date().toISOString() },
+            });
+          }
+          results.push({ type: action.type, success: true, details: `Goal set: ${d.title}` });
+          break;
+        }
+
+        case 'update_goal_progress': {
+          const d = action.data as { goal_id?: string; current_milestone?: number; active?: boolean };
+          if (!d.goal_id) {
+            results.push({ type: action.type, success: false, details: 'Missing goal_id' });
+            break;
+          }
+          const { data: gp } = await supabase
+            .from('josh_profile')
+            .select('id, profile_data')
+            .eq('profile_type', 'personal_goals')
+            .single();
+
+          if (gp) {
+            const pd = gp.profile_data as { goals?: Array<Record<string, unknown>> };
+            const goals = pd.goals || [];
+            const goal = goals.find((g) => g.id === d.goal_id);
+            if (goal) {
+              if (d.current_milestone !== undefined) goal.current_milestone = d.current_milestone;
+              if (d.active !== undefined) goal.active = d.active;
+              await supabase.from('josh_profile').update({
+                profile_data: { ...pd, goals, updated_at: new Date().toISOString() },
+              }).eq('id', gp.id);
+              results.push({ type: action.type, success: true, details: `Goal updated: ${goal.title}` });
+            } else {
+              results.push({ type: action.type, success: false, details: 'Goal not found' });
+            }
+          }
+          break;
+        }
+
         default:
           results.push({ type: action.type, success: false, details: `Unknown action type: ${action.type}` });
       }
@@ -1417,6 +1512,79 @@ ${replyEmails.map((e) => {
           return `- ${e.sender}: "${e.subject}" (${urgency}) — received ${new Date(e.received_at as string).toLocaleDateString()}`;
         }).join('\n')}`);
       }
+    }
+
+    // Fetch personal life context (goals, habits, personal commitments)
+    {
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      weekStart.setHours(0, 0, 0, 0);
+
+      const [lifeLogs, goalsProfile, personalCommitments] = await Promise.all([
+        supabase
+          .from('life_logs')
+          .select('log_type, title, tags, logged_at')
+          .gte('logged_at', weekStart.toISOString())
+          .order('logged_at', { ascending: false })
+          .limit(20),
+        supabase
+          .from('josh_profile')
+          .select('profile_data')
+          .eq('profile_type', 'personal_goals')
+          .single(),
+        supabase
+          .from('commitments')
+          .select('id, title, commitment_type, due_date, status')
+          .eq('category', 'personal')
+          .in('status', ['pending', 'in_progress'])
+          .order('due_date', { ascending: true })
+          .limit(10),
+      ]);
+
+      const logs = lifeLogs.data || [];
+      const goals = (goalsProfile.data?.profile_data as { goals?: Array<Record<string, unknown>> })?.goals || [];
+      const pCommitments = personalCommitments.data || [];
+
+      // Compute fitness streak
+      const fitnessThisWeek = logs.filter((l) => l.tags?.includes('fitness')).length;
+
+      const personalLines: string[] = ['=== PERSONAL LIFE CONTEXT ==='];
+
+      if (goals.length > 0) {
+        personalLines.push('Goals:');
+        for (const g of goals.filter((g) => g.active)) {
+          if (g.type === 'recurring') {
+            const tag = g.tracking_tag as string;
+            const target = g.target as number;
+            const count = logs.filter((l) => l.tags?.includes(tag)).length;
+            personalLines.push(`- ${g.title}: ${count}/${target} this week`);
+          } else if (g.type === 'milestone') {
+            const milestones = g.milestones as string[] | undefined;
+            const current = g.current_milestone as number;
+            personalLines.push(`- ${g.title}: ${milestones?.[current] || 'In progress'}${g.due_date ? ` (due ${g.due_date})` : ''}`);
+          }
+        }
+      }
+
+      if (logs.length > 0) {
+        personalLines.push(`\nRecent life logs (${logs.length} this week):`);
+        for (const l of logs.slice(0, 5)) {
+          personalLines.push(`- ${l.title} [${l.tags?.join(', ') || l.log_type}] — ${new Date(l.logged_at).toLocaleDateString()}`);
+        }
+        personalLines.push(`Fitness this week: ${fitnessThisWeek}`);
+      } else {
+        personalLines.push('\nNo life logs this week yet.');
+      }
+
+      if (pCommitments.length > 0) {
+        personalLines.push(`\nPersonal commitments (${pCommitments.length} open):`);
+        for (const c of pCommitments) {
+          personalLines.push(`- [id:${c.id}] ${c.title} (${c.commitment_type}${c.due_date ? ', due ' + c.due_date : ''})`);
+        }
+      }
+
+      personalLines.push('=== END PERSONAL CONTEXT ===');
+      contextParts.push(personalLines.join('\n'));
     }
 
     // Fetch engagements (workstreams, contracts, financial context)
@@ -1903,7 +2071,10 @@ When an action is needed, your ENTIRE response must be ONLY the JSON object belo
     {"type": "update_contact", "data": {"name": "...", "org_name": "...", "updates": {"role": "...", "email": "...", "notes": "..."}}},
     {"type": "create_engagement", "data": {"org_name": "...", "name": "Deal or engagement name", "type": "Executive Coaching|Leadership Academy|PSL|PUP|PI Renewal|PIPC|Workshop|Consulting|DYTT|PI License|Other", "value_amount": 15000, "status": "active|completed|pending", "start_date": "2026-04-01", "end_date": "2026-12-31", "notes": "..."}},
     {"type": "update_engagement", "data": {"id": "...", "updates": {"name": "...", "type": "...", "value_amount": 0, "status": "...", "start_date": "...", "end_date": "...", "notes": "..."}}},
-    {"type": "update_business_context", "data": {"updates": {"active_priorities": ["new priority list"], "revenue_model.current_quarter.closed": 200000}}}
+    {"type": "update_business_context", "data": {"updates": {"active_priorities": ["new priority list"], "revenue_model.current_quarter.closed": 200000}}},
+    {"type": "log_life_event", "data": {"log_type": "workout|habit|family|personal_note", "title": "45 min strength training", "description": "optional details", "tags": ["fitness"], "metadata": {"duration": 45}}},
+    {"type": "set_goal", "data": {"title": "Work out 4x/week", "type": "recurring|milestone", "frequency": "weekly|monthly", "target": 4, "tracking_tag": "fitness", "due_date": "for milestones", "milestones": ["Step 1", "Step 2"]}},
+    {"type": "update_goal_progress", "data": {"goal_id": "goal-id", "current_milestone": 1, "active": true}}
   ]
 }
 
@@ -1918,10 +2089,21 @@ Action guidelines:
 - For get_prep: returns session prep including last recap, open items, provocative question, mood trajectory.
 - For create_contact: add a new person to a client org. relationship_type: champion, decision_maker, influencer, coach, admin, participant.
 - For update_contact: update a contact's details. Match by name (+ org_name for disambiguation).
+- For log_life_event: when Josh says "worked out", "went to gym", "ran 5K", etc. — log it with tags ["fitness"]. For family events use tags ["family"]. For personal notes use log_type "personal_note".
+- For set_goal: when Josh says "I want to work out 4 times a week" — create a recurring goal with tracking_tag "fitness" and target 4.
+- For update_goal_progress: when Josh says "I finished the outline for Language Leaks" — update the milestone goal's current_milestone.
 - Always include the "message" field with a human-readable summary.
 - Only include "actions" when the user is clearly requesting something be done.
 - You can include multiple actions in a single response.
 - Use org_id from context when available, fall back to org_name for resolution.
+
+PERSONAL LIFE AWARENESS:
+Josh is not just a consultant — he's a father of two young boys, husband to Katelyn, and someone who values fitness and personal growth. You have his personal goals, habit logs, and personal commitments in your context. When relevant:
+- If Josh asks "what should I focus on?" and he hasn't worked out in 3+ days, mention it naturally.
+- If Josh asks "how am I doing?" answer across ALL three worlds: practice, LeadShift, and personal.
+- If Josh mentions a workout, gym session, or exercise — log it as a life event with tags ["fitness"].
+- If Josh mentions family plans, date nights, kids' events — log as life event with tags ["family"].
+- Track his personal goals and mention progress/slippage when asked about his week/month.
 
 STRATEGIC ADVISOR MODE:
 When Josh asks about a client, don't just report data — think strategically:
