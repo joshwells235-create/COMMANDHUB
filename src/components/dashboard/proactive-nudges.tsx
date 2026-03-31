@@ -11,6 +11,8 @@ import {
   Clock,
   ArrowRight,
   CheckCircle2,
+  Heart,
+  Target,
 } from 'lucide-react';
 
 interface Nudge {
@@ -33,6 +35,8 @@ const iconMap: Record<string, React.ElementType> = {
   mail: Mail,
   'alert-triangle': AlertTriangle,
   clock: Clock,
+  heart: Heart,
+  target: Target,
 };
 
 const urgencyConfig = {
