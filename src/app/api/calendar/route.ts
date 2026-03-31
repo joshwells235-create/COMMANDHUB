@@ -26,6 +26,8 @@ export async function GET(request: NextRequest) {
     const dayStart = startOfDay(date).toISOString();
     const rangeEnd = endOfDay(new Date(date.getTime() + (days - 1) * 86400000)).toISOString();
 
+    const excludePersonal = searchParams.get('include_personal') !== 'true';
+
     let query = supabase
       .from('calendar_events')
       .select('*')
@@ -39,9 +41,17 @@ export async function GET(request: NextRequest) {
 
     const { data: events, error } = await query;
 
+    // Filter out personal events (Sleep, Deep Work, etc.) unless explicitly requested
+    const filtered = excludePersonal
+      ? (events || []).filter((e) => {
+          const eventType = (e.ai_analysis as Record<string, unknown> | null)?.event_type;
+          return eventType !== 'personal';
+        })
+      : events || [];
+
     if (error) throw error;
 
-    return NextResponse.json(events || []);
+    return NextResponse.json(filtered);
   } catch (error) {
     console.error('Calendar fetch error:', error);
     return NextResponse.json([], { status: 200 });

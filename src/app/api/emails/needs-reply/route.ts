@@ -7,12 +7,12 @@ export async function GET() {
     const supabase = createServerClient();
 
     // Fetch processed received emails that AI flagged as needs_reply
-    // Exclude sent folder AND emails where sender is Josh (inbox copies of sent mail)
+    // Exclude sent folder, dismissed/accepted/reviewed, and internal LeadShift emails
     const { data, error } = await supabase
       .from('emails')
-      .select('*, organization:organizations(id, name)')
+      .select('*, organization:organizations(id, name, is_own_business)')
       .eq('is_processed', true)
-      .neq('review_status', 'dismissed')
+      .not('review_status', 'in', '("dismissed","accepted","reviewed")')
       .neq('folder', 'sent')
       .order('received_at', { ascending: false });
 
@@ -21,11 +21,12 @@ export async function GET() {
     }
 
     // Filter for emails where AI extraction indicates needs_reply
-    // and sender is NOT Josh (catches inbox copies of Josh's sent emails)
-    const needsReplyRaw = (data as ReviewEmail[]).filter(
+    // Exclude: Josh's own emails, internal LeadShift team emails
+    const needsReplyRaw = (data as (ReviewEmail & { organization?: { is_own_business?: boolean } })[]).filter(
       (email) =>
         email.ai_extraction?.needs_reply === true &&
-        !isJoshSender(email.sender)
+        !isJoshSender(email.sender) &&
+        !email.organization?.is_own_business // Skip internal LeadShift emails
     );
 
     // Now check reply tracking: if Josh already replied in the same conversation
