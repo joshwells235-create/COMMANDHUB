@@ -34,23 +34,30 @@ export async function GET(_request: NextRequest) {
     // --- 1. Meeting Prep: client meetings in next 48 hours with overdue items ---
     const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
 
-    const { data: upcomingEvents } = await supabase
+    const { data: rawUpcomingEvents } = await supabase
       .from('calendar_events')
-      .select('id, subject, start_time, org_id')
+      .select('id, subject, start_time, org_id, ai_analysis')
       .not('org_id', 'is', null)
       .gte('start_time', now.toISOString())
       .lte('start_time', in48h.toISOString())
       .order('start_time', { ascending: true });
 
+    // Filter out personal events (Sleep, Deep Work, etc.)
+    const upcomingEvents = (rawUpcomingEvents || []).filter((e) => {
+      const analysis = e.ai_analysis as Record<string, unknown> | null;
+      return analysis?.event_type !== 'personal';
+    });
+
     if (upcomingEvents && upcomingEvents.length > 0) {
       // Gather unique org IDs from events
       const eventOrgIds = [...new Set(upcomingEvents.map(e => e.org_id).filter(Boolean))] as string[];
 
-      // Fetch org names
+      // Fetch org names and filter out own-business
       const { data: eventOrgs } = await supabase
         .from('organizations')
-        .select('id, name')
-        .in('id', eventOrgIds);
+        .select('id, name, is_own_business')
+        .in('id', eventOrgIds)
+        .eq('is_own_business', false);
 
       const orgNameMap = new Map((eventOrgs || []).map(o => [o.id, o.name]));
 

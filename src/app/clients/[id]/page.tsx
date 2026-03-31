@@ -860,7 +860,8 @@ export default function ClientDetailPage() {
           )}
         </div>
 
-        {/* Prep Mode + Generate Briefing Buttons */}
+        {/* Prep Mode + Generate Briefing Buttons — only for client orgs */}
+        {!organization.is_own_business && (
         <div>
           <Link
             href={`/prep/${orgId}`}
@@ -901,8 +902,22 @@ export default function ClientDetailPage() {
             </div>
           )}
         </div>
+        )}
 
-        {/* Client Health Score */}
+        {/* Own business banner */}
+        {organization.is_own_business && (
+          <div className="bg-primary/10 border border-primary/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Building2 className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold text-primary">Internal Workspace</span>
+            </div>
+            <p className="text-xs text-muted">This is your business — not a client. Items here are internal team tasks, operations, and strategy.</p>
+          </div>
+        )}
+
+        {/* Client Health Score — only for clients */}
+        {!organization.is_own_business && (
+        <>
         {healthLoading ? (
           <div className="premium-card p-4">
             <div className="flex items-center gap-3 animate-pulse">
@@ -1045,9 +1060,11 @@ export default function ClientDetailPage() {
             </div>
           </div>
         ) : null}
+        </>
+        )}
 
-        {/* Client Intelligence Summary */}
-        {(lifecycleData || trajectoryData) && (
+        {/* Client Intelligence Summary — only for clients */}
+        {!organization.is_own_business && (lifecycleData || trajectoryData) && (
           <section>
             <button
               onClick={() => toggleSection('intelligence')}
