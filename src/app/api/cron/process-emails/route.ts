@@ -41,22 +41,31 @@ export async function GET(request: NextRequest) {
 
   let processed = 0;
   const errors: Array<{ email_id: string; error: string }> = [];
+  const emails = unprocessedEmails || [];
 
-  for (const email of unprocessedEmails || []) {
-    try {
-      await extractCommitmentsFromEmail(email, supabase);
-      processed++;
-    } catch (error) {
-      console.error(`Extraction failed for email ${email.id}:`, error);
-      errors.push({
-        email_id: email.id,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      // Mark as processed to avoid retrying broken emails forever
-      await supabase
-        .from('emails')
-        .update({ is_processed: true, review_status: 'error' })
-        .eq('id', email.id);
+  // Process in sub-batches of 5 concurrently for ~5x throughput
+  for (let i = 0; i < emails.length; i += 5) {
+    const batch = emails.slice(i, i + 5);
+    const results = await Promise.allSettled(
+      batch.map((email) => extractCommitmentsFromEmail(email, supabase))
+    );
+
+    for (let j = 0; j < results.length; j++) {
+      const result = results[j];
+      const email = batch[j];
+      if (result.status === 'fulfilled') {
+        processed++;
+      } else {
+        console.error(`Extraction failed for email ${email.id}:`, result.reason);
+        errors.push({
+          email_id: email.id,
+          error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+        });
+        await supabase
+          .from('emails')
+          .update({ is_processed: true, review_status: 'error' })
+          .eq('id', email.id);
+      }
     }
   }
 
