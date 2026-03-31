@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
 import { matchOrgByName, matchOrgByContacts } from '@/lib/match-org';
+import { isSimilarCommitment } from '@/lib/dedup-commitment';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -455,12 +456,7 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
 
       const { data: duplicates } = await dedupQuery;
 
-      const isDuplicate = duplicates?.some((d) => {
-        const existingTitle = d.title.toLowerCase().trim();
-        return existingTitle === dedupTitle
-          || existingTitle.includes(dedupTitle)
-          || dedupTitle.includes(existingTitle);
-      });
+      const isDuplicate = duplicates?.some((d) => isSimilarCommitment(d.title, commitment.title));
 
       if (isDuplicate) continue;
 

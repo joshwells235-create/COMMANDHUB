@@ -3,6 +3,7 @@ import { syncCalendar } from '@/lib/microsoft-graph';
 import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
+import { isSimilarCommitment } from '@/lib/dedup-commitment';
 import { matchOrgByName, matchOrgByContacts, matchOrgBySubject } from '@/lib/match-org';
 
 export const runtime = 'nodejs';
@@ -185,10 +186,7 @@ Return JSON only:
                 if (commitment.timing === 'before') {
                   // Check for duplicate
                   const newTitle = (commitment.title || '').toLowerCase().trim();
-                  const isDuplicate = (existingCommitments || []).some((d) => {
-                    const existing = d.title.toLowerCase().trim();
-                    return existing === newTitle || existing.includes(newTitle) || newTitle.includes(existing);
-                  });
+                  const isDuplicate = (existingCommitments || []).some((d) => isSimilarCommitment(d.title, commitment.title));
                   if (isDuplicate) continue;
 
                   const prepDue = commitment.suggested_due
