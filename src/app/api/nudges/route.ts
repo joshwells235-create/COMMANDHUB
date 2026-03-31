@@ -124,6 +124,7 @@ export async function GET(_request: NextRequest) {
       .from('organizations')
       .select('id, name, updated_at')
       .eq('status', 'active')
+      .eq('is_own_business', false)
       .in('strategic_value', ['strategic', 'emerging']);
 
     if (strategicOrgs && strategicOrgs.length > 0) {

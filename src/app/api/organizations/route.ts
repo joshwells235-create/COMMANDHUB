@@ -4,11 +4,19 @@ import { createServerClient } from '@/lib/supabase/server';
 export async function GET(request: NextRequest) {
   try {
     const supabase = createServerClient();
+    const { searchParams } = new URL(request.url);
+    const includeOwn = searchParams.get('include_own') === 'true';
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('organizations')
       .select('*')
       .order('name', { ascending: true });
+
+    if (!includeOwn) {
+      query = query.eq('is_own_business', false);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

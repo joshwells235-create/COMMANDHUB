@@ -47,7 +47,7 @@ export default function FocusView() {
   });
 
   const { organizations } = useOrganizations();
-  const { events, loading: calendarLoading, connected } = useCalendarEvents();
+  const { events, loading: calendarLoading, connected } = useCalendarEvents(undefined, 2);
   const { emails: reviewEmails } = useReviewQueue();
   const { emails: needsReplyEmails } = useNeedsReply();
 

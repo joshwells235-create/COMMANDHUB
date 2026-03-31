@@ -20,16 +20,24 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const dateStr = searchParams.get('date') || format(new Date(), 'yyyy-MM-dd');
+    const days = parseInt(searchParams.get('days') || '1', 10);
+    const orgId = searchParams.get('org_id');
     const date = new Date(dateStr);
     const dayStart = startOfDay(date).toISOString();
-    const dayEnd = endOfDay(date).toISOString();
+    const rangeEnd = endOfDay(new Date(date.getTime() + (days - 1) * 86400000)).toISOString();
 
-    const { data: events, error } = await supabase
+    let query = supabase
       .from('calendar_events')
       .select('*')
       .gte('start_time', dayStart)
-      .lte('start_time', dayEnd)
+      .lte('start_time', rangeEnd)
       .order('start_time', { ascending: true });
+
+    if (orgId) {
+      query = query.eq('org_id', orgId);
+    }
+
+    const { data: events, error } = await query;
 
     if (error) throw error;
 

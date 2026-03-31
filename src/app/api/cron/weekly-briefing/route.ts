@@ -82,7 +82,8 @@ export async function GET(request: Request) {
     const { data: activeOrgs } = await supabase
       .from('organizations')
       .select('id, name, strategic_value, status')
-      .in('status', ['active', 'prospect']);
+      .in('status', ['active', 'prospect'])
+      .eq('is_own_business', false);
 
     interface ClientHealth {
       name: string;

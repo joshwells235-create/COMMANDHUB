@@ -34,6 +34,11 @@ export async function GET(request: NextRequest) {
       query = query.eq('category', category);
     }
 
+    const search = searchParams.get('search');
+    if (search) {
+      query = query.ilike('title', `%${search}%`);
+    }
+
     const { data, error } = await query;
 
     if (error) {

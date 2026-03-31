@@ -68,11 +68,12 @@ export async function GET() {
   try {
     const supabase = createServerClient();
 
-    // Fetch all active organizations
+    // Fetch all active client organizations (exclude own business)
     const { data: orgs, error: orgsError } = await supabase
       .from('organizations')
       .select('id, name, strategic_value')
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .eq('is_own_business', false);
 
     if (orgsError) {
       return NextResponse.json({ error: orgsError.message }, { status: 500 });
