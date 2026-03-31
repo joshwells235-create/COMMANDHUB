@@ -1261,9 +1261,15 @@ ${dueToday.length > 0 ? `\nDUE TODAY (${dueToday.length}): ${dueToday.map((c) =>
         .order('start_time', { ascending: true })
         .limit(30);
 
-      if (events && events.length > 0) {
+      // Filter out personal events (Sleep, Deep Work, etc.)
+      const businessEvents = (events || []).filter((e) => {
+        const aiData = e.ai_analysis as Record<string, unknown> | null;
+        return aiData?.event_type !== 'personal';
+      });
+
+      if (businessEvents.length > 0) {
         // Fetch org names for events
-        const eventOrgIds = [...new Set(events.map((e) => e.org_id).filter(Boolean))];
+        const eventOrgIds = [...new Set(businessEvents.map((e) => e.org_id).filter(Boolean))];
         let eventOrgMap = new Map<string, string>();
         if (eventOrgIds.length > 0) {
           const { data: eventOrgs } = await supabase
@@ -1276,10 +1282,10 @@ ${dueToday.length > 0 ? `\nDUE TODAY (${dueToday.length}): ${dueToday.map((c) =>
         // Split into this week and next week
         const oneWeekOut = new Date(now);
         oneWeekOut.setDate(oneWeekOut.getDate() + 7);
-        const thisWeek = events.filter((e) => new Date(e.start_time) < oneWeekOut);
-        const nextWeek = events.filter((e) => new Date(e.start_time) >= oneWeekOut);
+        const thisWeek = businessEvents.filter((e) => new Date(e.start_time) < oneWeekOut);
+        const nextWeek = businessEvents.filter((e) => new Date(e.start_time) >= oneWeekOut);
 
-        const formatEvent = (e: typeof events[0]) => {
+        const formatEvent = (e: typeof businessEvents[0]) => {
           const orgName = e.org_id ? eventOrgMap.get(e.org_id as string) : null;
           const start = new Date(e.start_time);
           const aiData = e.ai_analysis as Record<string, unknown> | null;
@@ -1380,6 +1386,32 @@ ${sentEmails.map((e) => {
           const orgName = e.org_id ? emailOrgMap.get(e.org_id as string) : null;
           const ai = e.ai_extraction as Record<string, unknown> | null;
           return `- ${new Date((e.sent_at || e.received_at) as string).toLocaleDateString()}: "${e.subject}" to ${Array.isArray(e.sender) ? e.sender : 'recipients'}${orgName ? ' (' + orgName + ')' : ''}${ai?.email_summary ? '\n  Summary: ' + ai.email_summary : ''}`;
+        }).join('\n')}`);
+      }
+    }
+
+    // Fetch emails needing reply so the Brain knows what's pending
+    {
+      const { data: needsReplyEmails } = await supabase
+        .from('emails')
+        .select('subject, sender, received_at, ai_extraction, org_id')
+        .eq('is_processed', true)
+        .not('review_status', 'in', '("dismissed","accepted","reviewed")')
+        .neq('folder', 'sent')
+        .order('received_at', { ascending: false })
+        .limit(20);
+
+      const replyEmails = (needsReplyEmails || []).filter((e) => {
+        const ai = e.ai_extraction as Record<string, unknown> | null;
+        return ai?.needs_reply === true;
+      });
+
+      if (replyEmails.length > 0) {
+        contextParts.push(`EMAILS NEEDING REPLY (${replyEmails.length}):
+${replyEmails.map((e) => {
+          const ai = e.ai_extraction as Record<string, unknown> | null;
+          const urgency = ai?.reply_urgency || 'unknown';
+          return `- ${e.sender}: "${e.subject}" (${urgency}) — received ${new Date(e.received_at as string).toLocaleDateString()}`;
         }).join('\n')}`);
       }
     }
