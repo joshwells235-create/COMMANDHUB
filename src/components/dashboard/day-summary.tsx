@@ -10,10 +10,11 @@ interface DaySummaryProps {
   waitingOn: Commitment[];
   events: CalendarEvent[];
   needsReplyCount: number;
+  completedToday?: number;
   pipelineSnapshot?: { closed: number; target: number; quarter: string } | null;
 }
 
-export function DaySummary({ commitments, waitingOn, events, needsReplyCount, pipelineSnapshot }: DaySummaryProps) {
+export function DaySummary({ commitments, waitingOn, events, needsReplyCount, completedToday = 0, pipelineSnapshot }: DaySummaryProps) {
   const now = new Date();
 
   // Calculate overdue by context (client / internal / personal)
@@ -107,6 +108,11 @@ export function DaySummary({ commitments, waitingOn, events, needsReplyCount, pi
         <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${urgencyLabel.bg} ${urgencyLabel.color}`}>
           {urgencyLabel.text}
         </span>
+        {completedToday > 0 && (
+          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-success/10 text-success">
+            {completedToday} done today
+          </span>
+        )}
         {pipelineSnapshot && (
           <Link href="/analytics" className="ml-auto text-[10px] text-muted hover:text-foreground transition-colors">
             ${(pipelineSnapshot.closed / 1000).toFixed(0)}K / ${(pipelineSnapshot.target / 1000).toFixed(0)}K {pipelineSnapshot.quarter}
@@ -131,20 +137,49 @@ export function DaySummary({ commitments, waitingOn, events, needsReplyCount, pi
         )}
       </div>
 
-      {/* Next action */}
-      {nextUp && (
-        <div className="mt-2 flex items-start gap-2 text-xs text-muted">
-          <TrendingUp className="w-3 h-3 mt-0.5 flex-shrink-0 text-primary" />
-          <span>
-            Next: <span className="text-foreground font-medium">{nextUp.title}</span>
-            {nextUpOrg && <span className="text-muted"> — {nextUpOrg}</span>}
-            {nextUp.due_date && isToday(new Date(nextUp.due_date)) && <span className="text-warning"> (due today)</span>}
-            {nextUp.due_date && new Date(nextUp.due_date) < now && !isToday(new Date(nextUp.due_date)) && (
-              <span className="text-danger"> (overdue)</span>
-            )}
-          </span>
-        </div>
-      )}
+      {/* Right Now — time-aware guidance */}
+      {(() => {
+        // Find next meeting within 60 minutes
+        const soonMeeting = todayEvents.find((e) => {
+          const start = new Date(e.start_time).getTime();
+          const diff = start - now.getTime();
+          return diff > 0 && diff < 60 * 60 * 1000;
+        });
+        const soonMeetingOrg = soonMeeting?.organization as { name: string } | undefined;
+
+        if (soonMeeting) {
+          const mins = Math.round((new Date(soonMeeting.start_time).getTime() - now.getTime()) / 60000);
+          return (
+            <div className="mt-2 flex items-start gap-2 text-xs">
+              <Calendar className="w-3 h-3 mt-0.5 flex-shrink-0 text-warning" />
+              <span>
+                <span className="text-warning font-medium">In {mins} min:</span>{' '}
+                <span className="text-foreground font-medium">{soonMeeting.subject}</span>
+                {soonMeetingOrg && <span className="text-muted"> — {soonMeetingOrg.name}</span>}
+                {soonMeeting.org_id && <Link href={`/prep/${soonMeeting.org_id}`} className="text-primary ml-1.5 hover:underline">Prep</Link>}
+              </span>
+            </div>
+          );
+        }
+
+        if (nextUp) {
+          return (
+            <div className="mt-2 flex items-start gap-2 text-xs text-muted">
+              <TrendingUp className="w-3 h-3 mt-0.5 flex-shrink-0 text-primary" />
+              <span>
+                Right now: <span className="text-foreground font-medium">{nextUp.title}</span>
+                {nextUpOrg && <span className="text-muted"> — {nextUpOrg}</span>}
+                {nextUp.due_date && isToday(new Date(nextUp.due_date)) && <span className="text-warning"> (due today)</span>}
+                {nextUp.due_date && new Date(nextUp.due_date) < now && !isToday(new Date(nextUp.due_date)) && (
+                  <span className="text-danger"> (overdue)</span>
+                )}
+              </span>
+            </div>
+          );
+        }
+
+        return null;
+      })()}
     </div>
   );
 }

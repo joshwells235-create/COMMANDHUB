@@ -360,7 +360,7 @@ export function CommitmentList({
             return (
               <SortableWrapper key={c.id} id={c.id} disabled={!sortable || !!editingId}>
               <div
-                className="bg-card rounded-lg hover:bg-card-hover transition-all border border-transparent hover:border-border"
+                className="bg-card rounded-lg hover:bg-card-hover transition-all border border-transparent hover:border-border group"
               >
                 <button
                   onClick={() => {
@@ -399,9 +399,29 @@ export function CommitmentList({
                     </div>
                   </div>
 
-                  <span className={cn('text-[10px] flex-shrink-0 mt-1', isOverdue ? 'text-danger' : 'text-muted/60')}>
-                    {getCommitmentTypeLabel(c.commitment_type)}
-                  </span>
+                  <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+                    <span className={cn('text-[10px]', isOverdue ? 'text-danger' : 'text-muted/60')}>
+                      {getCommitmentTypeLabel(c.commitment_type)}
+                    </span>
+                    {showActions && (
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onComplete(c.id); }}
+                          className="p-1 rounded hover:bg-success/20 text-muted/40 hover:text-success transition-colors"
+                          title="Done"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setSnoozeTarget(snoozeTarget === c.id ? null : c.id); }}
+                          className="p-1 rounded hover:bg-warning/20 text-muted/40 hover:text-warning transition-colors"
+                          title="Snooze"
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </button>
 
                 {isExpanded && showActions && !isEditing && (

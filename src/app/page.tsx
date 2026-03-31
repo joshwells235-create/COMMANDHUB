@@ -82,10 +82,11 @@ export default function FocusView() {
 
   const [trends, setTrends] = useState<{ overdue: number[]; dueToday: number[]; completed: number[]; waiting: number[] } | null>(null);
   const [emailQueue, setEmailQueue] = useState<{ unprocessed: number; total: number; processingRate: number } | null>(null);
+  const [completedToday, setCompletedToday] = useState(0);
   const [pipelineSnapshot, setPipelineSnapshot] = useState<{ quarter: string; closed: number; target: number; gap: number; pacePercent: number; renewals: number; renewalValue: number } | null>(null);
 
   useEffect(() => {
-    fetch('/api/stats/trends').then(r => r.json()).then(setTrends).catch(() => {});
+    fetch('/api/stats/trends').then(r => r.json()).then(d => { setTrends(d); if (d?.completed) setCompletedToday(d.completed[d.completed.length - 1] || 0); }).catch(() => {});
     fetch('/api/stats/scorecard').then(r => r.json()).then(data => {
       if (data?.email) setEmailQueue(data.email);
     }).catch(() => {});
@@ -216,6 +217,7 @@ export default function FocusView() {
             waitingOn={waitingOn}
             events={events}
             needsReplyCount={needsReplyEmails.length}
+            completedToday={completedToday}
             pipelineSnapshot={pipelineSnapshot}
           />
 
@@ -308,6 +310,7 @@ export default function FocusView() {
             waitingOn={waitingOn}
             events={events}
             needsReplyCount={needsReplyEmails.length}
+            completedToday={completedToday}
             pipelineSnapshot={pipelineSnapshot}
           />
 
