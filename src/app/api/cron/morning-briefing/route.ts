@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { getBusinessContext } from '@/lib/business-context';
 import { sendEmail } from '@/lib/resend';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
@@ -328,6 +329,38 @@ export async function GET(request: Request) {
       return `- ${o.name} (${o.strategic_value}): ${o.days_since_contact} days since contact, ${o.overdue_count} overdue items`;
     }).join('\n');
 
+    // Fetch pipeline/revenue context for strategic sections
+    const businessCtx = await getBusinessContext(supabase);
+    const bizProfile = businessCtx.profile as Record<string, unknown> | null;
+    const revenueModel = bizProfile?.revenue_model as Record<string, unknown> | undefined;
+    const currentQuarter = revenueModel?.current_quarter as Record<string, unknown> | undefined;
+    const activePriorities = bizProfile?.active_priorities as string[] | undefined;
+
+    // Upcoming renewals (next 30 days)
+    const thirtyDaysOut = new Date(today.getTime() + 30 * 86400000);
+    const { data: upcomingRenewals } = await supabase
+      .from('engagements')
+      .select('name, value_amount, end_date, org_id, organizations(name)')
+      .eq('status', 'pending')
+      .gte('end_date', todayStr)
+      .lte('end_date', thirtyDaysOut.toISOString())
+      .order('end_date', { ascending: true })
+      .limit(10);
+
+    const renewalsText = (upcomingRenewals || []).map(r => {
+      const orgName = (r.organizations as unknown as { name: string } | null)?.name || 'Unknown';
+      return `- ${orgName}: ${r.name} — $${Number(r.value_amount || 0).toLocaleString()} (due ${r.end_date})`;
+    }).join('\n') || 'No renewals due in next 30 days';
+
+    const pipelineContext = currentQuarter
+      ? `REVENUE CONTEXT:
+Quarter: ${currentQuarter.period || 'Current'} | Target: $${Number(currentQuarter.target || 0).toLocaleString()} | Closed: $${Number(currentQuarter.closed || 0).toLocaleString()} | Gap: $${Number(currentQuarter.gap || 0).toLocaleString()}
+
+PIPELINE — RENEWALS DUE NEXT 30 DAYS:
+${renewalsText}
+${activePriorities ? `\nACTIVE BUSINESS PRIORITIES:\n${activePriorities.map(p => `- ${p}`).join('\n')}` : ''}`
+      : '';
+
     // --- Call Claude to generate the briefing ---
     const client = new Anthropic();
     const message = await client.messages.create({
@@ -374,6 +407,8 @@ CROSS-CLIENT THEME ALERTS (${activeThemeAlerts.length} active):
 ${themeAlertsText}
 ${themeAlertsData?.coaching_opportunity ? `Coaching Opportunity: ${themeAlertsData.coaching_opportunity}` : ''}
 ` : ''}
+${pipelineContext}
+
 Generate the email as complete HTML with inline CSS. The design MUST follow these rules:
 - Dark theme: background #0f172a, card backgrounds #1e293b, text #e2e8f0, muted text #94a3b8, accent blue #3b82f6, accent green #22c55e for wins, accent amber #f59e0b for warnings, accent red #ef4444 for urgent/overdue
 - Mobile-first: max-width 600px, centered, padding 16px on cards
@@ -403,11 +438,13 @@ Structure the email with these exact sections in this order:
 
 7. **Theme Alerts** (ONLY if CROSS-CLIENT THEME ALERTS data is provided above): Show urgent and pattern-level themes that span multiple clients. For each, show the theme name, severity badge (red for urgent, amber for pattern), which clients are affected, and the recommended action. If a coaching opportunity exists, highlight it. Keep this section compact — 2-3 alerts max.
 
-8. **Week Ahead**: Compact preview of the next 7 days — group by day, show event name + client. Flag high-priority events (client coaching sessions, PI sessions, workshops) with a colored badge. This helps Josh mentally prepare and ensures nothing sneaks up on him. Show commitments due this week alongside the calendar. Only show if there are upcoming events.
+8. **Pipeline Watch** (ONLY if REVENUE CONTEXT data is provided above): Compact section showing quarterly revenue pace (closed vs target with a simple text progress indicator), renewals due this month with dollar amounts, and any active business priorities that are time-sensitive. Purple left border. Keep it to 3-4 lines max — just enough for Josh to know where he stands financially.
 
-9. **Replies Needed**: Emails awaiting response. Sort by urgency (high first). Show sender and subject. Only show if there are any.
+9. **Week Ahead**: Compact preview of the next 7 days — group by day, show event name + client. Flag high-priority events (client coaching sessions, PI sessions, workshops) with a colored badge. This helps Josh mentally prepare and ensures nothing sneaks up on him. Show commitments due this week alongside the calendar. Only show if there are upcoming events.
 
-10. **Footer**: Brief, grounding sign-off. One line. Not motivational-poster cheesy — more like a thoughtful colleague. Examples of the right tone: "You've got a solid handle on things." or "Big day ahead — start with the one thing." Keep it contextual to the actual data above.
+10. **Replies Needed**: Emails awaiting response. Sort by urgency (high first). Show sender and subject. Only show if there are any.
+
+11. **Footer**: Brief, grounding sign-off. One line. Not motivational-poster cheesy — more like a thoughtful colleague. Examples of the right tone: "You've got a solid handle on things." or "Big day ahead — start with the one thing." Keep it contextual to the actual data above.
 
 Important rules:
 - If a section has no data, SKIP IT ENTIRELY (no empty state messages except for schedule)

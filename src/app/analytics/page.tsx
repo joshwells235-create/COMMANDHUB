@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   Zap, ArrowLeft, Loader2, BarChart3, TrendingUp, TrendingDown, Users, Target,
   Mail, Clock, CheckCircle2, AlertTriangle, Activity, Gauge, ArrowUpRight, ArrowDownRight, Minus,
+  DollarSign, Calendar,
 } from 'lucide-react';
 
 interface WeeklyBar {
@@ -18,6 +19,31 @@ interface WeeklyData {
   completionRates: number[];
   clientEngagement: Array<{ name: string; count: number }>;
   typeBreakdown: Record<string, number>;
+}
+
+interface PipelineData {
+  quarterlyPace: {
+    quarter: string;
+    target: number;
+    closed: number;
+    gap: number;
+    pacePercent: number;
+  };
+  pipeline: {
+    total: number;
+    dealCount: number;
+    byMonth: Array<{
+      month: string;
+      total: number;
+      deals: number;
+      items: Array<{ name: string; org: string; amount: number; type: string }>;
+    }>;
+  };
+  renewals: {
+    upcoming60Days: number;
+    value: number;
+    items: Array<{ name: string; org: string; amount: number; dueDate: string }>;
+  };
 }
 
 interface Scorecard {
@@ -104,15 +130,18 @@ function MetricCard({ icon: Icon, label, value, sub, trend, color = 'text-primar
 export default function AnalyticsPage() {
   const [data, setData] = useState<WeeklyData | null>(null);
   const [scorecard, setScorecard] = useState<Scorecard | null>(null);
+  const [pipelineData, setPipelineData] = useState<PipelineData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       fetch('/api/stats/weekly').then((r) => r.json()).catch(() => null),
       fetch('/api/stats/scorecard').then((r) => r.json()).catch(() => null),
-    ]).then(([weekly, sc]) => {
+      fetch('/api/stats/pipeline').then((r) => r.json()).catch(() => null),
+    ]).then(([weekly, sc, pipe]) => {
       if (weekly?.weeklyBars) setData(weekly);
       if (sc?.practice) setScorecard(sc);
+      if (pipe?.quarterlyPace) setPipelineData(pipe);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -283,6 +312,116 @@ export default function AnalyticsPage() {
                     {s.email.unprocessed} emails queued for AI extraction — processing 15/cycle
                   </p>
                 )}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Revenue Pipeline */}
+        {pipelineData && (
+          <>
+            <div className="flex items-center gap-2 mb-1">
+              <DollarSign className="w-5 h-5 text-violet-400" />
+              <h2 className="text-sm font-semibold uppercase tracking-wider">Revenue Pipeline</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Quarterly Pace */}
+              <div className="bg-card rounded-xl border border-border p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <TrendingUp className="w-4 h-4 text-primary" />
+                  <span className="text-xs text-muted uppercase tracking-wider font-medium">{pipelineData.quarterlyPace.quarter} Pace</span>
+                </div>
+                <p className="text-2xl font-bold">${(pipelineData.quarterlyPace.closed / 1000).toFixed(0)}K</p>
+                <p className="text-xs text-muted">of ${(pipelineData.quarterlyPace.target / 1000).toFixed(0)}K target</p>
+                <div className="w-full h-2 bg-background rounded-full overflow-hidden mt-2">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      pipelineData.quarterlyPace.pacePercent >= 80 ? 'bg-success' :
+                      pipelineData.quarterlyPace.pacePercent >= 50 ? 'bg-warning' : 'bg-danger'
+                    }`}
+                    style={{ width: `${Math.min(100, pipelineData.quarterlyPace.pacePercent)}%` }}
+                  />
+                </div>
+                {pipelineData.quarterlyPace.gap > 0 && (
+                  <p className="text-xs text-warning mt-1">${(pipelineData.quarterlyPace.gap / 1000).toFixed(0)}K gap</p>
+                )}
+              </div>
+
+              {/* Open Pipeline */}
+              <div className="bg-card rounded-xl border border-border p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="w-4 h-4 text-violet-400" />
+                  <span className="text-xs text-muted uppercase tracking-wider font-medium">Open Pipeline</span>
+                </div>
+                <p className="text-2xl font-bold">${(pipelineData.pipeline.total / 1000).toFixed(0)}K</p>
+                <p className="text-xs text-muted">{pipelineData.pipeline.dealCount} deals</p>
+              </div>
+
+              {/* Renewals */}
+              <div className="bg-card rounded-xl border border-border p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Calendar className="w-4 h-4 text-warning" />
+                  <span className="text-xs text-muted uppercase tracking-wider font-medium">Renewals (60 days)</span>
+                </div>
+                <p className="text-2xl font-bold">{pipelineData.renewals.upcoming60Days}</p>
+                <p className="text-xs text-muted">${(pipelineData.renewals.value / 1000).toFixed(1)}K total</p>
+              </div>
+            </div>
+
+            {/* Pipeline by Month */}
+            {pipelineData.pipeline.byMonth.length > 0 && (
+              <div className="bg-card rounded-xl border border-border p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <BarChart3 className="w-4 h-4 text-violet-400" />
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Pipeline by Month</h2>
+                </div>
+                <div className="space-y-3">
+                  {pipelineData.pipeline.byMonth.slice(0, 8).map((m) => (
+                    <div key={m.month}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-muted">{m.month}</span>
+                        <span className="text-sm font-semibold">${(m.total / 1000).toFixed(1)}K</span>
+                      </div>
+                      <div className="w-full h-3 bg-background rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-violet-500/60 to-violet-400"
+                          style={{ width: `${Math.min(100, (m.total / Math.max(...pipelineData.pipeline.byMonth.map(x => x.total), 1)) * 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {m.items.slice(0, 3).map((item, i) => (
+                          <span key={i} className="text-[10px] text-muted/60">{item.org} (${(item.amount / 1000).toFixed(1)}K)</span>
+                        ))}
+                        {m.items.length > 3 && <span className="text-[10px] text-muted/60">+{m.items.length - 3} more</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Upcoming Renewals */}
+            {pipelineData.renewals.items.length > 0 && (
+              <div className="bg-card rounded-xl border border-border p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Calendar className="w-4 h-4 text-warning" />
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Upcoming Renewals</h2>
+                </div>
+                <div className="space-y-2">
+                  {pipelineData.renewals.items.map((r, i) => (
+                    <div key={i} className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
+                      <div>
+                        <p className="text-sm">{r.org}</p>
+                        <p className="text-xs text-muted">{r.name}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">${(r.amount / 1000).toFixed(1)}K</p>
+                        <p className="text-xs text-muted">{r.dueDate}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </>

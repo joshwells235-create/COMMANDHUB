@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target, User, Mail } from 'lucide-react';
+import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target, User, Mail, DollarSign } from 'lucide-react';
 import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
@@ -80,11 +80,21 @@ export default function FocusView() {
 
   const [trends, setTrends] = useState<{ overdue: number[]; dueToday: number[]; completed: number[]; waiting: number[] } | null>(null);
   const [emailQueue, setEmailQueue] = useState<{ unprocessed: number; total: number; processingRate: number } | null>(null);
+  const [pipelineSnapshot, setPipelineSnapshot] = useState<{ quarter: string; closed: number; target: number; gap: number; pacePercent: number; renewals: number; renewalValue: number } | null>(null);
 
   useEffect(() => {
     fetch('/api/stats/trends').then(r => r.json()).then(setTrends).catch(() => {});
     fetch('/api/stats/scorecard').then(r => r.json()).then(data => {
       if (data?.email) setEmailQueue(data.email);
+    }).catch(() => {});
+    fetch('/api/stats/pipeline').then(r => r.json()).then(data => {
+      if (data?.quarterlyPace) {
+        setPipelineSnapshot({
+          ...data.quarterlyPace,
+          renewals: data.renewals?.upcoming60Days || 0,
+          renewalValue: data.renewals?.value || 0,
+        });
+      }
     }).catch(() => {});
   }, []);
 
@@ -363,6 +373,35 @@ export default function FocusView() {
             <div className="bg-card rounded-xl border border-border p-4">
               <ClientPulse />
             </div>
+
+            {/* Pipeline Snapshot */}
+            {pipelineSnapshot && (
+              <Link href="/analytics" className="bg-card rounded-xl border border-border p-4 block hover:border-border-hover transition-all">
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="w-4 h-4 text-violet-400" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Revenue Pace</h3>
+                </div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-lg font-bold">${(pipelineSnapshot.closed / 1000).toFixed(0)}K</span>
+                  <span className="text-xs text-muted">/ ${(pipelineSnapshot.target / 1000).toFixed(0)}K {pipelineSnapshot.quarter}</span>
+                </div>
+                <div className="w-full h-1.5 bg-background rounded-full overflow-hidden mb-1.5">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      pipelineSnapshot.pacePercent >= 80 ? 'bg-success' :
+                      pipelineSnapshot.pacePercent >= 50 ? 'bg-warning' : 'bg-danger'
+                    }`}
+                    style={{ width: `${Math.min(100, pipelineSnapshot.pacePercent)}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-muted">
+                  {pipelineSnapshot.gap > 0 && <span className="text-warning">${(pipelineSnapshot.gap / 1000).toFixed(0)}K gap</span>}
+                  {pipelineSnapshot.renewals > 0 && (
+                    <span>{pipelineSnapshot.renewals} renewals (${(pipelineSnapshot.renewalValue / 1000).toFixed(0)}K)</span>
+                  )}
+                </div>
+              </Link>
+            )}
 
             {/* Email Processing Status */}
             {emailQueue && emailQueue.unprocessed > 0 && (

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { getBusinessContext, formatBusinessContextForPrompt, formatOrgRevenueForPrompt } from '@/lib/business-context';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
 
@@ -1001,6 +1002,87 @@ Recent transcripts: ${(orgTranscripts || []).map((t) => `${t.title} (${t.transcr
           break;
         }
 
+        case 'create_engagement': {
+          const data = action.data as Record<string, unknown>;
+          let engOrgId = data.org_id as string | undefined;
+          if (!engOrgId && data.org_name) {
+            const { data: matchedOrg } = await supabase
+              .from('organizations')
+              .select('id')
+              .ilike('name', `%${data.org_name}%`)
+              .limit(1)
+              .single();
+            engOrgId = matchedOrg?.id;
+          }
+          const { error: engError } = await supabase.from('engagements').insert({
+            org_id: engOrgId || null,
+            name: data.name || 'Untitled',
+            type: data.type || null,
+            status: data.status || 'active',
+            value_amount: data.value_amount || null,
+            start_date: data.start_date || null,
+            end_date: data.end_date || null,
+            notes: data.notes || null,
+          });
+          if (engError) throw new Error(engError.message);
+          results.push({ type: action.type, success: true, details: `Created engagement '${data.name}'${engOrgId ? '' : ' (no org matched)'}` });
+          break;
+        }
+
+        case 'update_engagement': {
+          const data = action.data as Record<string, unknown>;
+          const updates = data.updates as Record<string, unknown> || {};
+          const { error: updEngErr } = await supabase
+            .from('engagements')
+            .update(updates)
+            .eq('id', data.id as string);
+          if (updEngErr) throw new Error(updEngErr.message);
+          results.push({ type: action.type, success: true, details: `Updated engagement ${data.id}` });
+          break;
+        }
+
+        case 'update_business_context': {
+          const data = action.data as Record<string, unknown>;
+          const updates = data.updates as Record<string, unknown>;
+          if (updates) {
+            const { data: existing } = await supabase
+              .from('josh_profile')
+              .select('id, profile_data')
+              .eq('profile_type', 'business_context')
+              .single();
+            if (existing) {
+              const current = existing.profile_data as Record<string, unknown>;
+              // Shallow merge for top-level keys, deep merge for nested objects
+              const merged = { ...current };
+              for (const [key, value] of Object.entries(updates)) {
+                if (key.includes('.')) {
+                  // Dot notation: e.g. "revenue_model.current_quarter.closed" = 200000
+                  const parts = key.split('.');
+                  let target = merged as Record<string, unknown>;
+                  for (let i = 0; i < parts.length - 1; i++) {
+                    if (!target[parts[i]] || typeof target[parts[i]] !== 'object') {
+                      target[parts[i]] = {};
+                    }
+                    target = target[parts[i]] as Record<string, unknown>;
+                  }
+                  target[parts[parts.length - 1]] = value;
+                } else {
+                  merged[key] = value;
+                }
+              }
+              merged['updated_at'] = new Date().toISOString();
+              await supabase
+                .from('josh_profile')
+                .update({ profile_data: merged, updated_at: new Date().toISOString() })
+                .eq('id', existing.id);
+              results.push({ type: action.type, success: true, details: 'Business context updated' });
+            } else {
+              results.push({ type: action.type, success: false, details: 'No business context profile found' });
+            }
+          }
+          break;
+        }
+
         default:
           results.push({ type: action.type, success: false, details: `Unknown action type: ${action.type}` });
       }
@@ -1104,6 +1186,13 @@ export async function POST(request: NextRequest) {
     const profileMap: Record<string, unknown> = {};
     for (const row of profileRows || []) {
       profileMap[row.profile_type] = row.profile_data;
+    }
+
+    // Fetch business context for strategic advisor capabilities
+    const businessCtx = await getBusinessContext(supabase);
+    const businessContextStr = formatBusinessContextForPrompt(businessCtx);
+    if (businessContextStr) {
+      contextParts.push(businessContextStr);
     }
 
     // Always fetch recent activity so chat knows what Josh just did
@@ -1353,10 +1442,10 @@ ${recentActivity.map((a) => {
     const mentionedOrgs = detectMentionedOrgs(message, orgList);
     for (const org of mentionedOrgs) {
       try {
-        // Fetch org details
+        // Fetch org details (including intelligence JSONB for revenue/tier context)
         const { data: orgDetail } = await supabase
           .from('organizations')
-          .select('name, industry, status, strategic_value, notes')
+          .select('name, industry, status, strategic_value, notes, intelligence')
           .eq('id', org.id)
           .single();
 
@@ -1401,6 +1490,14 @@ ${recentActivity.map((a) => {
           .order('start_time', { ascending: false })
           .limit(10);
 
+        // Fetch engagement/deal history for this org
+        const { data: orgEngagements } = await supabase
+          .from('engagements')
+          .select('name, type, status, value_amount, start_date, end_date, notes')
+          .eq('org_id', org.id)
+          .order('start_date', { ascending: false })
+          .limit(20);
+
         // Build health metrics
         const openCmts = (orgCommitments || []).filter((c) => ['pending', 'in_progress', 'waiting', 'snoozed'].includes(c.status));
         const overdueCmts = openCmts.filter((c) => c.due_date && new Date(c.due_date) < new Date());
@@ -1412,10 +1509,16 @@ ${recentActivity.map((a) => {
           ? Math.round((Date.now() - new Date(lastSession.transcript_date).getTime()) / 86400000)
           : null;
 
+        // Revenue context from engagements
+        const revenueStr = formatOrgRevenueForPrompt(org.id, businessCtx.orgRevenue, orgEngagements || undefined);
+
+        // Org intelligence JSONB (tier, cross-sell potential, etc.)
+        const orgIntel = (orgDetail as Record<string, unknown> | null)?.intelligence as Record<string, unknown> | undefined;
+
         let clientBlock = `\n\nDEEP CLIENT DATA — ${org.name.toUpperCase()}:
 Organization: ${orgDetail?.name || org.name} | Status: ${orgDetail?.status} | Strategic value: ${orgDetail?.strategic_value} | Industry: ${orgDetail?.industry || 'Unknown'}
 ${orgDetail?.notes ? `Notes: ${orgDetail.notes}` : ''}
-Health: ${openCmts.length} open commitments (${overdueCmts.length} overdue) | ${completedCmts.length} completed | Follow-through: ${followThroughRate}%
+${revenueStr ? revenueStr + '\n' : ''}${orgIntel?.relationship_depth ? `Relationship depth: ${orgIntel.relationship_depth}\n` : ''}${orgIntel?.cross_sell_potential ? `Cross-sell potential: ${JSON.stringify(orgIntel.cross_sell_potential)}\n` : ''}Health: ${openCmts.length} open commitments (${overdueCmts.length} overdue) | ${completedCmts.length} completed | Follow-through: ${followThroughRate}%
 ${daysSinceContact !== null ? `Days since last session: ${daysSinceContact}` : 'No sessions recorded'}`;
 
         // Contacts with full profiles and assessments
@@ -1712,8 +1815,8 @@ ${matchedCommitments.map((c) => `- [id:${c.id}] [${c.owner}] ${c.title} (${c.com
     // Build system prompt
     const todayStr = new Date().toISOString().split('T')[0];
     const mentionedOrgNames = mentionedOrgs.map((o) => o.name).join(', ');
-    const systemPrompt = `You are Command Hub, Josh Wells's AI chief of staff at LeadShift.
-Josh is a leadership development consultant who does sales, coaching, consulting, facilitating, training, and advising for executives and organizations. His core frameworks include Language Leaks (Agency/Identity/Worth), the Signal Model, Predictive Index, Five Dysfunctions of a Team, and EQ-i 2.0.
+    const systemPrompt = `You are Command Hub, Josh Wells's AI chief of staff and strategic advisor at LeadShift.
+Josh Wells is a Partner and top revenue producer at LeadShift, a leadership development consulting firm founded in 1997. He manages an ~$850K annual book of business across ~60 clients. His work spans executive coaching, leadership academies (Leadership Academy/Elite5, ALIGN), PI behavioral assessments, team workshops (PSL, PUP, DYTT, Change/Tough Conversations), certification (PIPC/DRWT), and fractional advisory roles. His proprietary framework "Language Leaks" (Agency/Identity/Worth lenses) is his distinctive intellectual contribution. Other core frameworks: Signal Model, Predictive Index, Five Dysfunctions of a Team, EQ-i 2.0.
 
 You have FULL ACCESS to Josh's entire database: every commitment, every session transcript (with summaries, themes, language leaks, notable quotes, client insights), every client's health metrics, contacts, calendar events, and recent activity. All of this data is provided below. USE IT. Do not say you lack data or need to search — the data is already in your context.
 
@@ -1762,7 +1865,10 @@ When an action is needed, your ENTIRE response must be ONLY the JSON object belo
     {"type": "get_client_health", "data": {"org_name": "..."}},
     {"type": "get_prep", "data": {"org_name": "..."}},
     {"type": "create_contact", "data": {"org_name": "...", "name": "...", "role": "...", "email": "...", "relationship_type": "champion|decision_maker|influencer|coach|admin|participant", "notes": "..."}},
-    {"type": "update_contact", "data": {"name": "...", "org_name": "...", "updates": {"role": "...", "email": "...", "notes": "..."}}}
+    {"type": "update_contact", "data": {"name": "...", "org_name": "...", "updates": {"role": "...", "email": "...", "notes": "..."}}},
+    {"type": "create_engagement", "data": {"org_name": "...", "name": "Deal or engagement name", "type": "Executive Coaching|Leadership Academy|PSL|PUP|PI Renewal|PIPC|Workshop|Consulting|DYTT|PI License|Other", "value_amount": 15000, "status": "active|completed|pending", "start_date": "2026-04-01", "end_date": "2026-12-31", "notes": "..."}},
+    {"type": "update_engagement", "data": {"id": "...", "updates": {"name": "...", "type": "...", "value_amount": 0, "status": "...", "start_date": "...", "end_date": "...", "notes": "..."}}},
+    {"type": "update_business_context", "data": {"updates": {"active_priorities": ["new priority list"], "revenue_model.current_quarter.closed": 200000}}}
   ]
 }
 
@@ -1781,6 +1887,24 @@ Action guidelines:
 - Only include "actions" when the user is clearly requesting something be done.
 - You can include multiple actions in a single response.
 - Use org_id from context when available, fall back to org_name for resolution.
+
+STRATEGIC ADVISOR MODE:
+When Josh asks about a client, don't just report data — think strategically:
+- What's the revenue trajectory? Growing, flat, or declining?
+- What services has this client NOT received that similar clients have? Surface cross-sell opportunities.
+- What's the next natural service to offer based on known cross-sell patterns?
+- For renewal-only clients, flag that similar clients have expanded to consulting/workshops.
+
+When Josh asks "what should I focus on" or "what's important today/this week", consider:
+- Quarterly revenue pace vs target (from business context)
+- Pipeline gaps — months without an anchor deal (Leadership Academy, ALIGN, Fractional)
+- High-value clients going cold (14+ days no contact)
+- Growth opportunities at expanding clients
+- Coaching concentration risks (most coaching revenue is at MMG)
+- Active priorities from the business context
+
+When creating or discussing engagements, use create_engagement to track deals.
+When Josh reports a closed deal or pipeline update, use create_engagement or update_engagement AND update_business_context to keep the living system current.
 
 CRITICAL RULES:
 - You have the data. USE IT. When Josh asks "How are things going at MMG?" — you have MMG's transcripts, commitments, contacts, health metrics, and session notes RIGHT HERE in your context. Synthesize and answer directly.
