@@ -21,22 +21,24 @@ export async function GET(request: Request) {
     const tomorrowStr = new Date(today.getTime() + 86400000).toISOString().split('T')[0];
     const twentyFourHoursAgo = new Date(today.getTime() - 86400000).toISOString();
 
-    // 1. Fetch today's calendar events
-    const { data: events } = await supabase
+    // 1. Fetch today's calendar events (exclude personal blocks like Sleep, Deep Work)
+    const { data: rawEvents } = await supabase
       .from('calendar_events')
       .select('id, subject, start_time, end_time, location, ai_analysis, org_id')
       .gte('start_time', `${todayStr}T00:00:00`)
       .lt('start_time', `${tomorrowStr}T00:00:00`)
       .order('start_time', { ascending: true });
+    const events = (rawEvents || []).filter((e) => (e.ai_analysis as Record<string, unknown> | null)?.event_type !== 'personal');
 
-    // 1b. Fetch next 7 days of calendar events (lookahead)
+    // 1b. Fetch next 7 days of calendar events (exclude personal)
     const weekAheadEnd = new Date(today.getTime() + 7 * 86400000);
-    const { data: weekAheadEvents } = await supabase
+    const { data: rawWeekAheadEvents } = await supabase
       .from('calendar_events')
       .select('id, subject, start_time, end_time, ai_analysis, org_id')
       .gte('start_time', `${tomorrowStr}T00:00:00`)
       .lt('start_time', weekAheadEnd.toISOString())
       .order('start_time', { ascending: true });
+    const weekAheadEvents = (rawWeekAheadEvents || []).filter((e) => (e.ai_analysis as Record<string, unknown> | null)?.event_type !== 'personal');
 
     // 2. Overdue commitments (Josh owns)
     const { data: overdueCommitments } = await supabase

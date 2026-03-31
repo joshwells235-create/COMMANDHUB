@@ -101,11 +101,16 @@ export default function FocusView() {
   const [showIntelligence, setShowIntelligence] = useState(false);
 
   // Compute org context for calendar events (overdue/open commitment counts per org)
+  // Exclude LeadShift (own business) commitments from the context
+  const ownBizOrgIds = useMemo(() => new Set(
+    organizations.filter((o) => o.is_own_business).map((o) => o.id)
+  ), [organizations]);
+
   const orgContext = useMemo(() => {
     const ctx: Record<string, { overdueCount: number; openCount: number }> = {};
     const now = new Date();
     for (const c of commitments) {
-      if (!c.org_id) continue;
+      if (!c.org_id || ownBizOrgIds.has(c.org_id)) continue;
       if (!ctx[c.org_id]) ctx[c.org_id] = { overdueCount: 0, openCount: 0 };
       ctx[c.org_id].openCount++;
       if (c.due_date && new Date(c.due_date) < now && !isToday(new Date(c.due_date))) {
@@ -113,7 +118,7 @@ export default function FocusView() {
       }
     }
     return ctx;
-  }, [commitments]);
+  }, [commitments, ownBizOrgIds]);
 
   if (commitmentsLoading) {
     return (
