@@ -68,8 +68,21 @@ export async function GET(request: Request) {
 
       const client = new Anthropic();
 
+      // Personal/routine event patterns to skip AI analysis entirely
+      const PERSONAL_PATTERNS = /^(sleep|deep work|workout|exercise|lunch|dinner|breakfast|meal|travel|personal|block|focus time|commute|morning routine|evening routine|nap|gym|meditation|journal|reading|walk|run|yoga|stretch)/i;
+
       for (const event of unprocessed) {
         try {
+          // Pre-filter personal/routine blocks — skip Claude analysis
+          if (PERSONAL_PATTERNS.test(event.subject || '')) {
+            await supabase.from('calendar_events').update({
+              is_processed: true,
+              ai_analysis: { event_type: 'personal', importance: 'none', prep_notes: null, implied_commitments: [] },
+            }).eq('id', event.id);
+            analyzed++;
+            continue;
+          }
+
           const attendees = event.attendees
             ? (event.attendees as Array<{ emailAddress?: { name?: string; address?: string } }>)
                 .map((a) => `${a.emailAddress?.name || ''} <${a.emailAddress?.address || ''}>`)
@@ -156,10 +169,28 @@ Return JSON only:
               })
               .eq('id', event.id);
 
-            // Auto-create prep commitments for before-event items
-            if (analysis.implied_commitments?.length > 0) {
+            // Auto-create prep commitments — only for business event types, with dedup
+            const BUSINESS_EVENT_TYPES = ['coaching_session', 'workshop', 'pi_session', 'client_meeting', 'internal_leadshift', 'vistage'];
+            if (analysis.implied_commitments?.length > 0 && BUSINESS_EVENT_TYPES.includes(analysis.event_type)) {
+              // Fetch existing commitments for dedup
+              const dedupQuery = supabase
+                .from('commitments')
+                .select('id, title')
+                .in('status', ['pending', 'in_progress', 'waiting'])
+                .limit(100);
+              if (matchedOrgId) dedupQuery.eq('org_id', matchedOrgId);
+              const { data: existingCommitments } = await dedupQuery;
+
               for (const commitment of analysis.implied_commitments) {
                 if (commitment.timing === 'before') {
+                  // Check for duplicate
+                  const newTitle = (commitment.title || '').toLowerCase().trim();
+                  const isDuplicate = (existingCommitments || []).some((d) => {
+                    const existing = d.title.toLowerCase().trim();
+                    return existing === newTitle || existing.includes(newTitle) || newTitle.includes(existing);
+                  });
+                  if (isDuplicate) continue;
+
                   const prepDue = commitment.suggested_due
                     || new Date(new Date(event.start_time).getTime() - 24 * 60 * 60 * 1000).toISOString();
 
