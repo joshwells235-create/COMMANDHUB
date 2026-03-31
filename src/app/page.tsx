@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target, User, Mail, DollarSign } from 'lucide-react';
+import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target, User, Mail, DollarSign, ChevronDown, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
@@ -16,13 +16,13 @@ import { TodayEvents } from '@/components/calendar/today-events';
 import { NeedsReplySection } from '@/components/review/needs-reply-section';
 import { CommandHubChat } from '@/components/chat/command-hub-chat';
 import { ProactiveNudges } from '@/components/dashboard/proactive-nudges';
+import { DaySummary } from '@/components/dashboard/day-summary';
 import { ClientPulse } from '@/components/dashboard/client-pulse';
 import { ActivityFeed } from '@/components/dashboard/activity-feed';
 import { FollowUpWidget } from '@/components/dashboard/follow-up-widget';
 import { IntelligencePanel } from '@/components/dashboard/intelligence-panel';
 import { CommandPalette } from '@/components/ui/command-palette';
 import { KeyboardShortcuts } from '@/components/ui/keyboard-shortcuts';
-import { Sparkline } from '@/components/ui/sparkline';
 import { isToday, isThisWeek } from 'date-fns';
 
 export default function FocusView() {
@@ -97,6 +97,23 @@ export default function FocusView() {
       }
     }).catch(() => {});
   }, []);
+
+  const [showIntelligence, setShowIntelligence] = useState(false);
+
+  // Compute org context for calendar events (overdue/open commitment counts per org)
+  const orgContext = useMemo(() => {
+    const ctx: Record<string, { overdueCount: number; openCount: number }> = {};
+    const now = new Date();
+    for (const c of commitments) {
+      if (!c.org_id) continue;
+      if (!ctx[c.org_id]) ctx[c.org_id] = { overdueCount: 0, openCount: 0 };
+      ctx[c.org_id].openCount++;
+      if (c.due_date && new Date(c.due_date) < now && !isToday(new Date(c.due_date))) {
+        ctx[c.org_id].overdueCount++;
+      }
+    }
+    return ctx;
+  }, [commitments]);
 
   if (commitmentsLoading) {
     return (
@@ -185,8 +202,20 @@ export default function FocusView() {
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 py-4 animate-fade-in">
         {/* MOBILE LAYOUT */}
-        <div className="lg:hidden space-y-4 stagger-children">
-          {/* 1. Next Up Card */}
+        <div className="lg:hidden space-y-3 stagger-children">
+          {/* 1. Day Summary — synthesized status */}
+          <DaySummary
+            commitments={joshCommitments}
+            waitingOn={waitingOn}
+            events={events}
+            needsReplyCount={needsReplyEmails.length}
+            pipelineSnapshot={pipelineSnapshot}
+          />
+
+          {/* 2. Proactive Intel */}
+          <ProactiveNudges />
+
+          {/* 3. Next Up Card */}
           <div className="bg-card rounded-xl border border-border next-up-border p-4 relative animated-gradient-border">
             <NextUpCard
               commitment={nextUp}
@@ -197,42 +226,15 @@ export default function FocusView() {
             />
           </div>
 
-          {/* 2. Stats Bar */}
-          <div className="grid grid-cols-4 gap-2 stagger-children">
-            <Link href="/commitments?view=overdue" className="glass rounded-xl p-3 text-center group hover:glow transition-all">
-              <p className="text-2xl font-bold text-danger stat-number">{stats.overdue}</p>
-              <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Overdue</p>
-              {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.overdue} color="#ef4444" /></div>}
-            </Link>
-            <Link href="/commitments?view=today" className="glass rounded-xl p-3 text-center group hover:glow transition-all">
-              <p className="text-2xl font-bold text-warning stat-number">{stats.dueToday}</p>
-              <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Due Today</p>
-              {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.dueToday} color="#eab308" /></div>}
-            </Link>
-            <Link href="/commitments?view=week" className="glass rounded-xl p-3 text-center group hover:glow transition-all">
-              <p className="text-2xl font-bold text-primary stat-number">{stats.thisWeek}</p>
-              <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">This Week</p>
-              {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.completed} color="#06b6d4" /></div>}
-            </Link>
-            <Link href="/commitments?view=waiting" className="glass rounded-xl p-3 text-center group hover:glow transition-all">
-              <p className="text-2xl font-bold text-orange-400 stat-number">{stats.waitingOn}</p>
-              <p className="text-[10px] font-light uppercase tracking-wider text-muted mt-0.5">Waiting On</p>
-              {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.waiting} color="#fb923c" /></div>}
-            </Link>
-          </div>
-
-          {/* 3. Proactive Intel */}
-          <ProactiveNudges />
-
-          {/* 4. Today's Calendar */}
+          {/* 4. Today & Tomorrow */}
           <div className="bg-card rounded-xl border border-border p-4">
-            <TodayEvents events={events} connected={connected} loading={calendarLoading} />
+            <TodayEvents events={events} connected={connected} loading={calendarLoading} orgContext={orgContext} />
           </div>
 
-          {/* 5. Needs Attention */}
+          {/* 5. Needs Attention (top 5) */}
           <div className="bg-card rounded-xl border border-border p-4">
             <CommitmentList
-              commitments={needsAttention}
+              commitments={needsAttention.slice(0, 5)}
               title="Needs Attention"
               emptyMessage="Queue is clear after your next task."
               onComplete={completeCommitment}
@@ -241,53 +243,67 @@ export default function FocusView() {
               onUpdate={updateCommitment}
               sortable
             />
+            {needsAttention.length > 5 && (
+              <Link href="/commitments" className="block text-center text-xs text-primary hover:underline mt-2">
+                View all {needsAttention.length} commitments
+              </Link>
+            )}
           </div>
 
-          {/* 5. Waiting On */}
+          {/* 6. Needs Reply (top 3) */}
           <div className="bg-card rounded-xl border border-border p-4">
-            <WaitingOnList commitments={waitingOn} onReceived={completeCommitment} />
+            <NeedsReplySection emails={needsReplyEmails.slice(0, 3)} />
+            {needsReplyEmails.length > 3 && (
+              <Link href="/review" className="block text-center text-xs text-primary hover:underline mt-2">
+                View all {needsReplyEmails.length} emails
+              </Link>
+            )}
           </div>
 
-          {/* 6. Follow-up Queue */}
+          {/* 7. Waiting On (top 3) */}
           <div className="bg-card rounded-xl border border-border p-4">
-            <FollowUpWidget />
+            <WaitingOnList commitments={waitingOn.slice(0, 3)} onReceived={completeCommitment} />
+            {waitingOn.length > 3 && (
+              <Link href="/commitments?view=waiting" className="block text-center text-xs text-primary hover:underline mt-2">
+                View all {waitingOn.length} waiting items
+              </Link>
+            )}
           </div>
 
-          {/* 7. Needs Reply */}
-          <div className="bg-card rounded-xl border border-border p-4">
-            <NeedsReplySection emails={needsReplyEmails} />
-          </div>
-
-          {/* 8. Alerts & Health (combined) */}
-          <IntelligencePanel />
-
-          {/* 9. Client Pulse */}
-          <div className="bg-card rounded-xl border border-border p-4">
-            <ClientPulse />
-          </div>
-
-          {/* 10. Activity Feed */}
-          <div className="bg-card rounded-xl border border-border p-4">
-            <ActivityFeed />
+          {/* 8. Collapsible Intelligence */}
+          <div className="bg-card rounded-xl border border-border overflow-hidden">
+            <button
+              onClick={() => setShowIntelligence(!showIntelligence)}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-card-hover transition-colors"
+            >
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted">Intelligence</span>
+              {showIntelligence ? <ChevronDown className="w-4 h-4 text-muted" /> : <ChevronRight className="w-4 h-4 text-muted" />}
+            </button>
+            {showIntelligence && (
+              <div className="px-4 pb-4 space-y-4">
+                <FollowUpWidget />
+                <IntelligencePanel />
+                <ClientPulse />
+                <ActivityFeed limit={5} />
+              </div>
+            )}
           </div>
         </div>
 
         {/* DESKTOP LAYOUT */}
-        <div className="hidden lg:grid lg:grid-cols-5 gap-4">
+        <div className="hidden lg:block space-y-4">
+          {/* Day Summary Banner (full width) */}
+          <DaySummary
+            commitments={joshCommitments}
+            waitingOn={waitingOn}
+            events={events}
+            needsReplyCount={needsReplyEmails.length}
+            pipelineSnapshot={pipelineSnapshot}
+          />
+
+          <div className="grid lg:grid-cols-5 gap-4">
           {/* Left column - "Your Day" */}
           <div className="lg:col-span-3 space-y-4">
-            <h2 className="section-title flex items-center gap-3">
-              Your Day
-              {stats.overdue === 0 && stats.dueToday === 0 && events.length <= 2 && (
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-success/20 text-success uppercase tracking-wider">Light day</span>
-              )}
-              {(stats.overdue + stats.dueToday >= 5 || events.length >= 5) && (
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-danger/20 text-danger uppercase tracking-wider">Full plate</span>
-              )}
-              {stats.overdue + stats.dueToday >= 1 && stats.overdue + stats.dueToday < 5 && events.length < 5 && (events.length > 2 || stats.overdue > 0) && (
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-warning/20 text-warning uppercase tracking-wider">Busy</span>
-              )}
-            </h2>
 
             {/* Proactive Intel */}
             <ProactiveNudges />
@@ -303,15 +319,15 @@ export default function FocusView() {
               />
             </div>
 
-            {/* Today's Calendar */}
+            {/* Today & Tomorrow */}
             <div className="bg-card rounded-xl border border-border p-4">
-              <TodayEvents events={events} connected={connected} loading={calendarLoading} />
+              <TodayEvents events={events} connected={connected} loading={calendarLoading} orgContext={orgContext} />
             </div>
 
-            {/* Needs Attention */}
+            {/* Needs Attention (top 5) */}
             <div className="bg-card rounded-xl border border-border p-4">
               <CommitmentList
-                commitments={needsAttention}
+                commitments={needsAttention.slice(0, 5)}
                 title="Needs Attention"
                 emptyMessage="Queue is clear after your next task."
                 onComplete={completeCommitment}
@@ -320,6 +336,11 @@ export default function FocusView() {
                 onUpdate={updateCommitment}
                 sortable
               />
+              {needsAttention.length > 5 && (
+                <Link href="/commitments" className="block text-center text-xs text-primary hover:underline mt-2">
+                  View all {needsAttention.length} commitments
+                </Link>
+              )}
             </div>
 
             {/* Needs Reply */}
@@ -330,35 +351,24 @@ export default function FocusView() {
 
           {/* Right column - "Intelligence" */}
           <div className="lg:col-span-2 space-y-4">
-            <h2 className="section-title">Intelligence</h2>
-
-            {/* Stats Bar */}
-            <div className="grid grid-cols-4 gap-2 stagger-children">
-              <Link href="/commitments?view=overdue" className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
-                <p className="text-2xl font-bold text-danger stat-number">{stats.overdue}</p>
-                <p className="text-xs text-muted">Overdue</p>
-                {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.overdue} color="#ef4444" /></div>}
+            {/* Compact Stats */}
+            <div className="grid grid-cols-4 gap-2">
+              <Link href="/commitments?view=overdue" className="glass rounded-xl p-2 text-center hover:border-border-hover transition-all">
+                <p className="text-xl font-bold text-danger">{stats.overdue}</p>
+                <p className="text-[10px] text-muted">Overdue</p>
               </Link>
-              <Link href="/commitments?view=today" className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
-                <p className="text-2xl font-bold text-warning stat-number">{stats.dueToday}</p>
-                <p className="text-xs text-muted">Due Today</p>
-                {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.dueToday} color="#eab308" /></div>}
+              <Link href="/commitments?view=today" className="glass rounded-xl p-2 text-center hover:border-border-hover transition-all">
+                <p className="text-xl font-bold text-warning">{stats.dueToday}</p>
+                <p className="text-[10px] text-muted">Due Today</p>
               </Link>
-              <Link href="/commitments?view=week" className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
-                <p className="text-2xl font-bold text-primary stat-number">{stats.thisWeek}</p>
-                <p className="text-xs text-muted">This Week</p>
-                {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.completed} color="#06b6d4" /></div>}
+              <Link href="/commitments?view=week" className="glass rounded-xl p-2 text-center hover:border-border-hover transition-all">
+                <p className="text-xl font-bold text-primary">{stats.thisWeek}</p>
+                <p className="text-[10px] text-muted">This Week</p>
               </Link>
-              <Link href="/commitments?view=waiting" className="glass rounded-xl p-3 text-center group hover:border-border-hover transition-all">
-                <p className="text-2xl font-bold text-orange-400 stat-number">{stats.waitingOn}</p>
-                <p className="text-xs text-muted">Waiting On</p>
-                {trends && <div className="flex justify-center mt-1"><Sparkline data={trends.waiting} color="#fb923c" /></div>}
+              <Link href="/commitments?view=waiting" className="glass rounded-xl p-2 text-center hover:border-border-hover transition-all">
+                <p className="text-xl font-bold text-orange-400">{stats.waitingOn}</p>
+                <p className="text-[10px] text-muted">Waiting On</p>
               </Link>
-            </div>
-
-            {/* Follow-up Queue */}
-            <div className="bg-card rounded-xl border border-border p-4">
-              <FollowUpWidget />
             </div>
 
             {/* Waiting On */}
@@ -366,67 +376,48 @@ export default function FocusView() {
               <WaitingOnList commitments={waitingOn} onReceived={completeCommitment} />
             </div>
 
-            {/* Alerts & Health (tabbed) */}
-            <IntelligencePanel />
-
-            {/* Client Pulse */}
+            {/* Follow-up Queue */}
             <div className="bg-card rounded-xl border border-border p-4">
-              <ClientPulse />
+              <FollowUpWidget />
             </div>
 
             {/* Pipeline Snapshot */}
             {pipelineSnapshot && (
-              <Link href="/analytics" className="bg-card rounded-xl border border-border p-4 block hover:border-border-hover transition-all">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="w-4 h-4 text-violet-400" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Revenue Pace</h3>
+              <Link href="/analytics" className="bg-card rounded-xl border border-border p-3 block hover:border-border-hover transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-3.5 h-3.5 text-violet-400" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Revenue Pace</span>
+                  </div>
+                  <span className="text-sm font-bold">${(pipelineSnapshot.closed / 1000).toFixed(0)}K<span className="text-muted font-normal text-xs"> / ${(pipelineSnapshot.target / 1000).toFixed(0)}K</span></span>
                 </div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-lg font-bold">${(pipelineSnapshot.closed / 1000).toFixed(0)}K</span>
-                  <span className="text-xs text-muted">/ ${(pipelineSnapshot.target / 1000).toFixed(0)}K {pipelineSnapshot.quarter}</span>
-                </div>
-                <div className="w-full h-1.5 bg-background rounded-full overflow-hidden mb-1.5">
+                <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${
-                      pipelineSnapshot.pacePercent >= 80 ? 'bg-success' :
-                      pipelineSnapshot.pacePercent >= 50 ? 'bg-warning' : 'bg-danger'
-                    }`}
+                    className={`h-full rounded-full transition-all ${pipelineSnapshot.pacePercent >= 80 ? 'bg-success' : pipelineSnapshot.pacePercent >= 50 ? 'bg-warning' : 'bg-danger'}`}
                     style={{ width: `${Math.min(100, pipelineSnapshot.pacePercent)}%` }}
                   />
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-muted">
-                  {pipelineSnapshot.gap > 0 && <span className="text-warning">${(pipelineSnapshot.gap / 1000).toFixed(0)}K gap</span>}
-                  {pipelineSnapshot.renewals > 0 && (
-                    <span>{pipelineSnapshot.renewals} renewals (${(pipelineSnapshot.renewalValue / 1000).toFixed(0)}K)</span>
-                  )}
                 </div>
               </Link>
             )}
 
-            {/* Email Processing Status */}
-            {emailQueue && emailQueue.unprocessed > 0 && (
-              <div className="bg-card rounded-xl border border-border p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Mail className="w-4 h-4 text-primary" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Email Intelligence</h3>
-                  <span className="ml-auto text-xs text-muted">{emailQueue.processingRate}%</span>
+            {/* Collapsible Intelligence */}
+            <div className="bg-card rounded-xl border border-border overflow-hidden">
+              <button
+                onClick={() => setShowIntelligence(!showIntelligence)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-card-hover transition-colors"
+              >
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted">Deep Intelligence</span>
+                {showIntelligence ? <ChevronDown className="w-4 h-4 text-muted" /> : <ChevronRight className="w-4 h-4 text-muted" />}
+              </button>
+              {showIntelligence && (
+                <div className="px-4 pb-4 space-y-4">
+                  <IntelligencePanel />
+                  <ClientPulse />
+                  <ActivityFeed limit={5} />
                 </div>
-                <div className="w-full h-1.5 bg-background rounded-full overflow-hidden mb-1.5">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-primary/60 to-primary transition-all"
-                    style={{ width: `${emailQueue.processingRate}%` }}
-                  />
-                </div>
-                <p className="text-[10px] text-muted">
-                  {emailQueue.unprocessed} emails queued for AI extraction
-                </p>
-              </div>
-            )}
-
-            {/* Activity Feed */}
-            <div className="bg-card rounded-xl border border-border p-4">
-              <ActivityFeed />
+              )}
             </div>
+          </div>
           </div>
         </div>
       </main>
