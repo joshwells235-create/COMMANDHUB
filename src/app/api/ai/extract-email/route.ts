@@ -272,6 +272,19 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
     matchedOrgId = matchOrgByContacts(allEmails, senderNames, contacts);
   }
 
+  // CRITICAL: Don't link emails to LeadShift (own business) unless they're genuinely
+  // internal business communications. The AI classifies email_category — only "internal"
+  // emails should be linked to LeadShift. Everything else (client, vendor, newsletter,
+  // personal, scheduling) should be null or linked to the actual client org.
+  const ownBusinessOrg = orgs.find((o) => o.is_own_business);
+  if (matchedOrgId && ownBusinessOrg && matchedOrgId === ownBusinessOrg.id) {
+    const category = extraction.email_category;
+    if (category !== 'internal') {
+      // Not a genuine internal email — don't dump it into LeadShift
+      matchedOrgId = null;
+    }
+  }
+
   // Determine review status based on intelligence
   let reviewStatus = 'pending';
   if (extraction.is_noise) {
