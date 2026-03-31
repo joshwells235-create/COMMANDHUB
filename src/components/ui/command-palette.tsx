@@ -14,6 +14,7 @@ import {
   MessageSquare,
   BarChart3,
   User,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface CommandItem {
@@ -93,15 +94,63 @@ export function CommandPalette({
     })),
   ];
 
+  // Live search results from API
+  const [searchResults, setSearchResults] = useState<CommandItem[]>([]);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    if (query.trim().length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(async () => {
+      const q = encodeURIComponent(query.trim());
+      const results: CommandItem[] = [];
+      try {
+        const [commitmentsRes, contactsRes] = await Promise.all([
+          fetch(`/api/commitments?search=${q}&limit=5&status=pending,in_progress,waiting,snoozed`).then(r => r.ok ? r.json() : []),
+          fetch(`/api/contacts?search=${q}&limit=5`).then(r => r.ok ? r.json() : []),
+        ]);
+        for (const c of commitmentsRes || []) {
+          const orgName = c.organization?.name;
+          results.push({
+            id: `search-commitment-${c.id}`,
+            label: c.title,
+            sublabel: `${c.commitment_type?.replace(/_/g, ' ')}${orgName ? ` — ${orgName}` : ''} (${c.status})`,
+            icon: CheckCircle2,
+            action: () => navigate(`/commitments`),
+            category: 'search' as 'client',
+          });
+        }
+        for (const c of contactsRes || []) {
+          results.push({
+            id: `search-contact-${c.id}`,
+            label: c.name,
+            sublabel: `${c.role || 'Contact'}${c.org_id ? '' : ''}`,
+            icon: User,
+            action: () => navigate(`/contacts/${c.id}`),
+            category: 'search' as 'client',
+          });
+        }
+      } catch { /* ignore */ }
+      setSearchResults(results);
+    }, 300);
+    return () => clearTimeout(searchTimerRef.current);
+  }, [query, navigate]);
+
   // Filter commands by query
   const filtered = query.trim()
-    ? allCommands.filter((cmd) => {
-        const q = query.toLowerCase();
-        return (
-          cmd.label.toLowerCase().includes(q) ||
-          (cmd.sublabel?.toLowerCase().includes(q) ?? false)
-        );
-      })
+    ? [
+        ...allCommands.filter((cmd) => {
+          const q = query.toLowerCase();
+          return (
+            cmd.label.toLowerCase().includes(q) ||
+            (cmd.sublabel?.toLowerCase().includes(q) ?? false)
+          );
+        }),
+        ...searchResults,
+      ]
     : allCommands.filter((cmd) => cmd.category !== 'client'); // Don't show all clients when empty
 
   // Reset selection when query changes
@@ -154,7 +203,8 @@ export function CommandPalette({
   // Group filtered items
   const navItems = filtered.filter((c) => c.category === 'navigate');
   const createItems = filtered.filter((c) => c.category === 'create');
-  const clientItems = filtered.filter((c) => c.category === 'client');
+  const clientItems = filtered.filter((c) => c.category === 'client' && !c.id.startsWith('search-'));
+  const searchItems = filtered.filter((c) => c.id.startsWith('search-'));
 
   let globalIndex = 0;
 
@@ -232,6 +282,7 @@ export function CommandPalette({
                 {renderGroup('Actions', createItems)}
                 {renderGroup('Navigate', navItems)}
                 {renderGroup('Clients', clientItems)}
+                {renderGroup('Search Results', searchItems)}
               </>
             )}
           </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { CalendarEvent } from '@/types/database';
 
-export function useCalendarEvents(date?: string) {
+export function useCalendarEvents(date?: string, days?: number) {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -11,6 +11,7 @@ export function useCalendarEvents(date?: string) {
   useEffect(() => {
     const params = new URLSearchParams();
     if (date) params.set('date', date);
+    if (days) params.set('days', String(days));
 
     fetch(`/api/calendar?${params}`)
       .then(async (res) => {
@@ -25,7 +26,7 @@ export function useCalendarEvents(date?: string) {
       .then(setEvents)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [date]);
+  }, [date, days]);
 
   return { events, loading, connected };
 }

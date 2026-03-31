@@ -6,6 +6,40 @@ import { AI_MODEL } from '@/lib/ai';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+export async function GET() {
+  try {
+    const supabase = createServerClient();
+    const { data: profiles } = await supabase
+      .from('josh_profile')
+      .select('profile_type, profile_data, updated_at')
+      .in('profile_type', ['writing_style', 'coaching_voice']);
+
+    if (!profiles || profiles.length === 0) {
+      return NextResponse.json({ profile: null });
+    }
+
+    // Merge writing_style and coaching_voice into one profile object
+    const merged: Record<string, unknown> = {};
+    let latestUpdate = '';
+    for (const p of profiles) {
+      const data = p.profile_data as Record<string, unknown>;
+      Object.assign(merged, data);
+      if (p.updated_at > latestUpdate) latestUpdate = p.updated_at;
+    }
+
+    return NextResponse.json({
+      profile: {
+        id: profiles[0].profile_type,
+        ...merged,
+        updated_at: latestUpdate,
+      },
+    });
+  } catch (error) {
+    console.error('Voice profile fetch error:', error);
+    return NextResponse.json({ error: 'Failed to fetch voice profile' }, { status: 500 });
+  }
+}
+
 export async function POST() {
   try {
     const supabase = createServerClient();

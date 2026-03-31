@@ -35,7 +35,7 @@ export async function GET(request: Request) {
     if (unprocessed && unprocessed.length > 0) {
       const { data: orgs } = await supabase
         .from('organizations')
-        .select('name, id, strategic_value')
+        .select('name, id, strategic_value, is_own_business')
         .eq('status', 'active');
 
       const { data: contacts } = await supabase

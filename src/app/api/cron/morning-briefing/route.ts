@@ -95,11 +95,12 @@ export async function GET(request: Request) {
       return extraction?.needs_reply === true;
     });
 
-    // 8. Relationship alerts: all active orgs, days since last transcript/email/event
+    // 8. Relationship alerts: all active client orgs (exclude own business)
     const { data: activeOrgs } = await supabase
       .from('organizations')
       .select('id, name, strategic_value, status')
-      .in('status', ['active', 'prospect']);
+      .in('status', ['active', 'prospect'])
+      .eq('is_own_business', false);
 
     interface RelationshipAlert {
       name: string;
