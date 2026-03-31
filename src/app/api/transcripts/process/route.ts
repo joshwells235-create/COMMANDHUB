@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { chunkText } from '@/lib/embeddings';
 import { AI_MODEL } from '@/lib/ai';
 import Anthropic from '@anthropic-ai/sdk';
+import { isSimilarCommitment } from '@/lib/dedup-commitment';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -495,13 +496,12 @@ Compare the current session against the prior sessions. Return JSON only (no mar
             .is('org_id', null)
             .in('status', ['pending', 'in_progress', 'waiting']);
 
-      const existingTitles = (existingCommitments || []).map((c) => c.title.toLowerCase().trim());
+      const existingCommitmentList = existingCommitments || [];
 
       const dedupedCommitments = extraction.commitments.filter(
         (c: { title: string }) => {
-          const newTitle = c.title.toLowerCase().trim();
-          return !existingTitles.some(
-            (existing) => existing === newTitle || existing.includes(newTitle) || newTitle.includes(existing)
+          return !existingCommitmentList.some(
+            (existing) => isSimilarCommitment(existing.title, c.title)
           );
         }
       );
