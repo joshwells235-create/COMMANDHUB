@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { CommitmentCreateInput } from '@/types/database';
+import { dedupAndCreateCommitment } from '@/lib/create-commitment';
 
 export async function GET(request: NextRequest) {
   try {
@@ -66,44 +67,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const now = new Date().toISOString();
+    const result = await dedupAndCreateCommitment(supabase, {
+      title: body.title,
+      description: body.description,
+      commitment_type: body.commitment_type,
+      category: body.category,
+      org_id: body.org_id,
+      contact_id: body.contact_id,
+      engagement_id: body.engagement_id,
+      other_party: body.other_party,
+      owner: body.owner,
+      due_date: body.due_date,
+      source_type: body.source_type,
+      source_ref: body.source_ref,
+      source_snippet: body.source_snippet,
+      tags: body.tags,
+    });
 
-    const { data: commitment, error } = await supabase
-      .from('commitments')
-      .insert({
-        title: body.title,
-        description: body.description ?? null,
-        commitment_type: body.commitment_type,
-        category: body.category ?? 'client',
-        org_id: body.org_id ?? null,
-        contact_id: body.contact_id ?? null,
-        engagement_id: body.engagement_id ?? null,
-        other_party: body.other_party ?? null,
-        owner: body.owner ?? 'josh',
-        due_date: body.due_date ?? null,
-        source_type: body.source_type ?? null,
-        source_ref: body.source_ref ?? null,
-        source_snippet: body.source_snippet ?? null,
-        tags: body.tags ?? null,
-        status: 'pending',
-        priority_score: 0,
-        escalation_level: 0,
-        ai_priority_modifier: 0,
-        last_touched_at: now,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!result.created) {
+      return NextResponse.json(
+        { duplicate: true, existing_title: result.duplicate_of, message: `Similar commitment already exists: "${result.duplicate_of}"` },
+        { status: 200 }
+      );
     }
 
-    // Log activity
-    await supabase.from('commitment_activity').insert({
-      commitment_id: commitment.id,
-      action: 'created',
-      details: { title: commitment.title },
-    });
+    // Fetch the full commitment to return
+    const { data: commitment } = await supabase
+      .from('commitments')
+      .select('*')
+      .eq('id', result.id)
+      .single();
 
     return NextResponse.json(commitment, { status: 201 });
   } catch (err) {

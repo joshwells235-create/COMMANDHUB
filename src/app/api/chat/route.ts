@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { getBusinessContext, formatBusinessContextForPrompt, formatOrgRevenueForPrompt } from '@/lib/business-context';
+import { dedupAndCreateCommitment } from '@/lib/create-commitment';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
 
@@ -276,40 +277,33 @@ async function executeActions(
 
           const commitmentType = d.commitment_type || 'follow_up';
           const dueDate = d.due_date ? parseRelativeDate(d.due_date) || d.due_date : null;
-          const now = new Date().toISOString();
 
-          const { data: commitment, error } = await supabase
-            .from('commitments')
-            .insert({
+          try {
+            const createResult = await dedupAndCreateCommitment(supabase, {
               title: d.title,
-              description: d.description ?? null,
+              description: d.description,
               commitment_type: commitmentType,
               org_id: orgId,
               owner: d.owner ?? 'josh',
               due_date: dueDate,
-              status: 'pending',
-              priority_score: 0,
-              escalation_level: 0,
-              ai_priority_modifier: 0,
-              last_touched_at: now,
-            })
-            .select()
-            .single();
+              source_type: 'chat',
+            });
 
-          if (error) {
-            results.push({ type: action.type, success: false, details: `DB error: ${error.message}` });
-          } else {
-            // Log activity
-            await supabase.from('commitment_activity').insert({
-              commitment_id: commitment.id,
-              action: 'created',
-              details: { title: commitment.title, source: 'chat' },
-            });
-            results.push({
-              type: action.type,
-              success: true,
-              details: `Created '${d.title}'${dueDate ? ' due ' + dueDate : ''}`,
-            });
+            if (!createResult.created) {
+              results.push({
+                type: action.type,
+                success: true,
+                details: `Skipped — similar commitment already exists: "${createResult.duplicate_of}"`,
+              });
+            } else {
+              results.push({
+                type: action.type,
+                success: true,
+                details: `Created '${d.title}'${dueDate ? ' due ' + dueDate : ''}`,
+              });
+            }
+          } catch (err) {
+            results.push({ type: action.type, success: false, details: (err as Error).message });
           }
           break;
         }

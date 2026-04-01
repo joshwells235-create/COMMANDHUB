@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
 import { matchOrgByName, matchOrgByContacts } from '@/lib/match-org';
-import { isSimilarCommitment } from '@/lib/dedup-commitment';
+import { dedupAndCreateCommitment } from '@/lib/create-commitment';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -446,29 +446,13 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
         if (matchedContact) contactId = matchedContact.id;
       }
 
-      // Deduplication: check for existing active commitment with similar title for same org
-      const dedupTitle = commitment.title.toLowerCase().trim();
-      let dedupQuery = supabase
-        .from('commitments')
-        .select('id, title')
-        .in('status', ['pending', 'in_progress', 'waiting']);
-
-      if (matchedOrgId) {
-        dedupQuery = dedupQuery.eq('org_id', matchedOrgId);
-      }
-
-      const { data: duplicates } = await dedupQuery;
-
-      const isDuplicate = duplicates?.some((d) => isSimilarCommitment(d.title, commitment.title));
-
-      if (isDuplicate) continue;
-
       // Derive commitment category from email classification
       const commitCategory = extraction.email_category === 'internal' ? 'internal'
         : extraction.email_category === 'personal' ? 'personal'
         : 'client';
 
-      await supabase.from('commitments').insert({
+      // Dedup + create via shared utility
+      await dedupAndCreateCommitment(supabase, {
         title: commitment.title,
         description: commitment.description,
         commitment_type: commitment.commitment_type,
@@ -476,12 +460,10 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
         owner: commitment.owner || 'josh',
         other_party: commitment.other_party,
         due_date: commitment.suggested_due || null,
-        status: commitment.owner === 'other' ? 'waiting' : 'pending',
         org_id: matchedOrgId,
         contact_id: contactId,
-        source: 'email',
+        source_type: 'email',
         source_ref: `email:${email.id}`,
-        priority_score: 50,
       });
     }
   }
