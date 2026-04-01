@@ -189,6 +189,52 @@ function parseRelativeDate(dateStr: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Relationship health & follow-up urgency helpers
+// ---------------------------------------------------------------------------
+
+function scoreContactRecency(days: number): number {
+  if (days <= 7) return 25;
+  if (days <= 14) return 20;
+  if (days <= 21) return 15;
+  if (days <= 30) return 10;
+  return 0;
+}
+
+function scoreOverdueHealth(count: number): number {
+  if (count === 0) return 25;
+  if (count === 1) return 20;
+  if (count === 2) return 15;
+  return 5;
+}
+
+function scoreFrequency(avgDays: number | null): number {
+  if (avgDays === null) return 5;
+  if (avgDays <= 10) return 25;
+  if (avgDays <= 18) return 20;
+  if (avgDays <= 35) return 15;
+  return 5;
+}
+
+function healthStatusLabel(score: number): string {
+  if (score >= 80) return 'thriving';
+  if (score >= 60) return 'healthy';
+  if (score >= 40) return 'cooling';
+  return 'at_risk';
+}
+
+function followUpUrgency(overdueCount: number, daysSinceContact: number, waitingCount: number, strategicValue: string): number {
+  let score = 0;
+  score += Math.min(overdueCount * 30, 60);
+  if (daysSinceContact >= 30) score += 40;
+  else if (daysSinceContact >= 21) score += 25;
+  else if (daysSinceContact >= 14) score += 15;
+  score += Math.min(waitingCount * 20, 40);
+  const multipliers: Record<string, number> = { strategic: 1.3, standard: 1.0, emerging: 0.8 };
+  score = Math.round(score * (multipliers[strategicValue] || 1.0));
+  return Math.min(score, 100);
+}
+
+// ---------------------------------------------------------------------------
 // Action execution
 // ---------------------------------------------------------------------------
 
@@ -1178,6 +1224,54 @@ Recent transcripts: ${(orgTranscripts || []).map((t) => `${t.title} (${t.transcr
           break;
         }
 
+        case 'create_strategic_note': {
+          const d = action.data as { title?: string; content?: string; tags?: string[]; org_name?: string };
+          if (!d.title || !d.content) {
+            results.push({ type: action.type, success: false, details: 'Missing title or content' });
+            break;
+          }
+
+          let noteOrgId: string | null = null;
+          if (d.org_name) {
+            const match = allOrgs.find(o => o.name.toLowerCase() === d.org_name!.toLowerCase());
+            if (match) noteOrgId = match.id;
+          }
+
+          const noteId = `note-${Date.now()}-${d.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30)}`;
+          const newNote = {
+            id: noteId,
+            title: d.title,
+            content: d.content,
+            tags: d.tags || [],
+            org_id: noteOrgId,
+            org_name: d.org_name || null,
+            created_at: new Date().toISOString(),
+          };
+
+          const { data: existingNotes } = await supabase
+            .from('josh_profile')
+            .select('id, profile_data')
+            .eq('profile_type', 'strategic_notes')
+            .single();
+
+          if (existingNotes) {
+            const current = existingNotes.profile_data as { notes?: Array<Record<string, unknown>> };
+            const notes = current.notes || [];
+            notes.unshift(newNote);
+            if (notes.length > 50) notes.length = 50;
+            await supabase.from('josh_profile').update({
+              profile_data: { notes, updated_at: new Date().toISOString() },
+            }).eq('id', existingNotes.id);
+          } else {
+            await supabase.from('josh_profile').insert({
+              profile_type: 'strategic_notes',
+              profile_data: { notes: [newNote], updated_at: new Date().toISOString() },
+            });
+          }
+          results.push({ type: action.type, success: true, details: `Strategic note saved: "${d.title}"` });
+          break;
+        }
+
         default:
           results.push({ type: action.type, success: false, details: `Unknown action type: ${action.type}` });
       }
@@ -1300,7 +1394,7 @@ export async function POST(request: NextRequest) {
     // Always fetch top commitments for general context
     const { data: commitments } = await supabase
       .from('commitments')
-      .select('id, title, commitment_type, owner, due_date, status, escalation_level, org_id')
+      .select('id, title, commitment_type, owner, due_date, status, escalation_level, org_id, category')
       .in('status', ['pending', 'in_progress', 'waiting', 'snoozed'])
       .order('priority_score', { ascending: false })
       .limit(20);
@@ -1639,6 +1733,50 @@ ${recentActivity.map((a) => {
     }
 
     // ---------------------------------------------------------------
+    // PRACTICE SNAPSHOT: Pre-computed practice-level intelligence
+    // ---------------------------------------------------------------
+    {
+      const activeClientOrgs = orgList.filter(o => !o.is_own_business && o.status === 'active');
+      const allOverdue = (commitments || []).filter(
+        c => c.due_date && new Date(c.due_date) < new Date() && !['completed', 'cancelled', 'waiting'].includes(c.status)
+      );
+      const internalActive = (commitments || []).filter(c => c.category === 'internal').length;
+
+      // Lifecycle stage distribution from pre-fetched profile data
+      const lifecycleStagesRaw = profileMap['lifecycle_stages'] as Array<{ org_id: string; stage: string }> | undefined;
+      const stageCounts: Record<string, number> = {};
+      if (Array.isArray(lifecycleStagesRaw)) {
+        for (const s of lifecycleStagesRaw) {
+          stageCounts[s.stage] = (stageCounts[s.stage] || 0) + 1;
+        }
+      }
+      const stageDistribution = Object.entries(stageCounts).map(([k, v]) => `${k}: ${v}`).join(', ');
+
+      const bizProfile = businessCtx.profile as Record<string, unknown> | null;
+      const revenueModel = bizProfile?.revenue_model as Record<string, unknown> | undefined;
+      const currentQuarter = revenueModel?.current_quarter as Record<string, unknown> | undefined;
+      const revenuePace = currentQuarter
+        ? `Q target: $${Number(currentQuarter.target || 0).toLocaleString()} | Closed: $${Number(currentQuarter.closed || 0).toLocaleString()} | Gap: $${Number(currentQuarter.gap || 0).toLocaleString()}`
+        : 'No quarterly revenue data';
+      const activePriorities = bizProfile?.active_priorities as string[] | undefined;
+
+      contextParts.push(`PRACTICE SNAPSHOT:
+Active clients: ${activeClientOrgs.length} | Internal tasks: ${internalActive} | Overdue commitments: ${allOverdue.length}
+${stageDistribution ? `Lifecycle distribution: ${stageDistribution}` : ''}
+Revenue pace: ${revenuePace}
+${activePriorities && activePriorities.length > 0 ? `Active priorities: ${activePriorities.join('; ')}` : ''}`);
+    }
+
+    // Include recent strategic notes for planning continuity
+    const strategicNotes = profileMap['strategic_notes'] as { notes?: Array<{ id: string; title: string; content: string; tags?: string[]; org_name?: string; created_at: string }> } | undefined;
+    if (strategicNotes?.notes && strategicNotes.notes.length > 0) {
+      const recentNotes = strategicNotes.notes.slice(0, 5);
+      contextParts.push(`STRATEGIC NOTES (${strategicNotes.notes.length} total, showing recent ${recentNotes.length}):
+${recentNotes.map(n => `- "${n.title}"${n.org_name ? ` [${n.org_name}]` : ''} (${n.created_at.split('T')[0]})${n.tags?.length ? ` #${n.tags.join(' #')}` : ''}
+  ${n.content.substring(0, 300)}${n.content.length > 300 ? '...' : ''}`).join('\n')}`);
+    }
+
+    // ---------------------------------------------------------------
     // DEEP CLIENT CONTEXT: When a client is mentioned, auto-fetch
     // their full data (transcripts, commitments, contacts, health)
     // ---------------------------------------------------------------
@@ -1701,9 +1839,10 @@ ${recentActivity.map((a) => {
           .order('start_date', { ascending: false })
           .limit(20);
 
-        // Build health metrics
+        // Build health metrics + relationship intelligence
         const openCmts = (orgCommitments || []).filter((c) => ['pending', 'in_progress', 'waiting', 'snoozed'].includes(c.status));
         const overdueCmts = openCmts.filter((c) => c.due_date && new Date(c.due_date) < new Date());
+        const waitingCmts = openCmts.filter((c) => c.status === 'waiting');
         const completedCmts = (orgCommitments || []).filter((c) => c.status === 'completed');
         const totalCmts = orgCommitments?.length || 0;
         const followThroughRate = totalCmts > 0 ? Math.round((completedCmts.length / totalCmts) * 100) : 0;
@@ -1711,6 +1850,37 @@ ${recentActivity.map((a) => {
         const daysSinceContact = lastSession
           ? Math.round((Date.now() - new Date(lastSession.transcript_date).getTime()) / 86400000)
           : null;
+
+        // Compute relationship health score (0-100)
+        const followThroughScore = totalCmts > 0 ? Math.round((completedCmts.length / totalCmts) * 25) : 25;
+        let avgDaysBetween: number | null = null;
+        if (orgTranscripts && orgTranscripts.length >= 2) {
+          const dates = orgTranscripts.map((t: { transcript_date: string }) => new Date(t.transcript_date).getTime());
+          let totalGap = 0;
+          for (let i = 0; i < dates.length - 1; i++) {
+            totalGap += dates[i] - dates[i + 1];
+          }
+          avgDaysBetween = Math.round(totalGap / (dates.length - 1) / (1000 * 60 * 60 * 24));
+        }
+        const healthScore = Math.min(100, Math.max(0,
+          scoreContactRecency(daysSinceContact ?? 999) +
+          followThroughScore +
+          scoreOverdueHealth(overdueCmts.length) +
+          scoreFrequency(avgDaysBetween)
+        ));
+        const healthLabel = healthStatusLabel(healthScore);
+
+        // Compute follow-up urgency (0-100)
+        const urgencyScore = followUpUrgency(
+          overdueCmts.length,
+          daysSinceContact ?? 999,
+          waitingCmts.length,
+          orgDetail?.strategic_value || 'standard'
+        );
+
+        // Lifecycle stage from pre-fetched profile data
+        const lifecycleStagesRaw = profileMap['lifecycle_stages'] as Array<{ org_id: string; stage: string; confidence?: number; signals?: string[] }> | undefined;
+        const orgLifecycle = Array.isArray(lifecycleStagesRaw) ? lifecycleStagesRaw.find(s => s.org_id === org.id) : null;
 
         // Revenue context from engagements
         const revenueStr = formatOrgRevenueForPrompt(org.id, businessCtx.orgRevenue, orgEngagements || undefined);
@@ -1721,8 +1891,9 @@ ${recentActivity.map((a) => {
         let clientBlock = `\n\nDEEP CLIENT DATA — ${org.name.toUpperCase()}:
 Organization: ${orgDetail?.name || org.name} | Status: ${orgDetail?.status} | Strategic value: ${orgDetail?.strategic_value} | Industry: ${orgDetail?.industry || 'Unknown'}
 ${orgDetail?.notes ? `Notes: ${orgDetail.notes}` : ''}
-${revenueStr ? revenueStr + '\n' : ''}${orgIntel?.relationship_depth ? `Relationship depth: ${orgIntel.relationship_depth}\n` : ''}${orgIntel?.cross_sell_potential ? `Cross-sell potential: ${JSON.stringify(orgIntel.cross_sell_potential)}\n` : ''}Health: ${openCmts.length} open commitments (${overdueCmts.length} overdue) | ${completedCmts.length} completed | Follow-through: ${followThroughRate}%
-${daysSinceContact !== null ? `Days since last session: ${daysSinceContact}` : 'No sessions recorded'}`;
+${revenueStr ? revenueStr + '\n' : ''}${orgIntel?.relationship_depth ? `Relationship depth: ${orgIntel.relationship_depth}\n` : ''}${orgIntel?.cross_sell_potential ? `Cross-sell potential: ${JSON.stringify(orgIntel.cross_sell_potential)}\n` : ''}Health: Score ${healthScore}/100 (${healthLabel}) | ${openCmts.length} open commitments (${overdueCmts.length} overdue) | Follow-through: ${followThroughRate}%${avgDaysBetween ? ` | Session cadence: ~${avgDaysBetween} days` : ''}
+${daysSinceContact !== null ? `Days since last session: ${daysSinceContact}` : 'No sessions recorded'}
+${orgLifecycle ? `Lifecycle stage: ${orgLifecycle.stage}${orgLifecycle.signals ? ` | Signals: ${orgLifecycle.signals.join('; ')}` : ''}` : ''}Follow-up urgency: ${urgencyScore}/100${urgencyScore >= 60 ? ' (HIGH PRIORITY)' : urgencyScore >= 30 ? ' (medium)' : ' (low)'}`;
 
         // Contacts with full profiles and assessments
         if (orgContacts && orgContacts.length > 0) {
@@ -1991,30 +2162,6 @@ ${matchedCommitments.map((c) => `- [id:${c.id}] [${c.owner}] ${c.title} (${c.com
       }
     }
 
-    // ---------------------------------------------------------------
-    // Lifecycle + Health intelligence for mentioned orgs
-    // ---------------------------------------------------------------
-    for (const org of mentionedOrgs) {
-      try {
-        // Fetch lifecycle stage
-        const { data: lifecycleData } = await supabase
-          .from('josh_profile')
-          .select('profile_data')
-          .eq('profile_type', 'lifecycle_stages')
-          .single();
-
-        if (lifecycleData?.profile_data) {
-          const stages = lifecycleData.profile_data as Array<{ org_id: string; stage: string; reasoning?: string }>;
-          const orgStage = Array.isArray(stages) ? stages.find((s) => s.org_id === org.id) : null;
-          if (orgStage) {
-            ragContext += `\n\nLIFECYCLE STAGE for ${org.name}: ${orgStage.stage}${orgStage.reasoning ? ` — ${orgStage.reasoning}` : ''}`;
-          }
-        }
-      } catch {
-        // Non-critical
-      }
-    }
-
     // Build system prompt — use Eastern Time for Josh
     const nowET = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
     const todayStr = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -2076,7 +2223,8 @@ When an action is needed, your ENTIRE response must be ONLY the JSON object belo
     {"type": "update_business_context", "data": {"updates": {"active_priorities": ["new priority list"], "revenue_model.current_quarter.closed": 200000}}},
     {"type": "log_life_event", "data": {"log_type": "workout|habit|family|personal_note", "title": "45 min strength training", "description": "optional details", "tags": ["fitness"], "metadata": {"duration": 45}}},
     {"type": "set_goal", "data": {"title": "Work out 4x/week", "type": "recurring|milestone", "frequency": "weekly|monthly", "target": 4, "tracking_tag": "fitness", "due_date": "for milestones", "milestones": ["Step 1", "Step 2"]}},
-    {"type": "update_goal_progress", "data": {"goal_id": "goal-id", "current_milestone": 1, "active": true}}
+    {"type": "update_goal_progress", "data": {"goal_id": "goal-id", "current_milestone": 1, "active": true}},
+    {"type": "create_strategic_note", "data": {"title": "Q3 Strategy Plan", "content": "The full strategic analysis or plan...", "tags": ["strategy", "q3"], "org_name": "optional client name"}}
   ]
 }
 
@@ -2094,6 +2242,7 @@ Action guidelines:
 - For log_life_event: when Josh says "worked out", "went to gym", "ran 5K", etc. — log it with tags ["fitness"]. For family events use tags ["family"]. For personal notes use log_type "personal_note".
 - For set_goal: when Josh says "I want to work out 4 times a week" — create a recurring goal with tracking_tag "fitness" and target 4.
 - For update_goal_progress: when Josh says "I finished the outline for Language Leaks" — update the milestone goal's current_milestone.
+- For create_strategic_note: when you and Josh work through a plan, strategy, or important analysis together, save it so it persists beyond chat history. Include the full analysis in the content field. Tag with relevant labels (strategy, quarterly, client-name, etc.). These notes appear in your context on future conversations, giving you continuity.
 - Always include the "message" field with a human-readable summary.
 - Only include "actions" when the user is clearly requesting something be done.
 - You can include multiple actions in a single response.
@@ -2117,21 +2266,38 @@ Josh is not just a consultant — he's a father of two young boys, husband to Ka
 
 STRATEGIC ADVISOR MODE:
 When Josh asks about a client, don't just report data — think strategically:
+- Reference the health score, lifecycle stage, and follow-up urgency in the client data above. A client that is "cooling" with high follow-up urgency needs different advice than one that is "thriving" in deep_work.
 - What's the revenue trajectory? Growing, flat, or declining?
 - What services has this client NOT received that similar clients have? Surface cross-sell opportunities.
 - What's the next natural service to offer based on known cross-sell patterns?
 - For renewal-only clients, flag that similar clients have expanded to consulting/workshops.
 
-When Josh asks "what should I focus on" or "what's important today/this week", consider:
-- Quarterly revenue pace vs target (from business context)
+When Josh asks "what should I focus on" or "what's important today/this week", use the PRACTICE SNAPSHOT above and consider:
+- Quarterly revenue pace vs target (from practice snapshot)
+- Lifecycle distribution — how many clients are at_risk or winding_down?
 - Pipeline gaps — months without an anchor deal (Leadership Academy, ALIGN, Fractional)
-- High-value clients going cold (14+ days no contact)
+- High-value clients going cold (14+ days no contact, high follow-up urgency)
 - Growth opportunities at expanding clients
-- Coaching concentration risks (most coaching revenue is at MMG)
+- Coaching concentration risks
 - Active priorities from the business context
+
+STRUCTURED THINKING FRAMEWORK:
+When Josh asks you to "help me think through", "plan", "figure out", or "what's my strategy for" something, use this framework:
+1. SITUATION: What does the data actually show? Cite specific numbers, dates, scores, and trends from context. Don't generalize — be precise.
+2. IMPLICATIONS: Connect data points. "Client X is winding_down with a health score of 35 AND their renewal is in 60 days, which means..."
+3. TRADE-OFFS: What are the competing priorities? "If you invest time re-engaging X, it means less time for Y. Here's why X matters more right now given the $45K revenue at stake..."
+4. RECOMMENDATIONS: Ranked by impact. Lead with the #1 action, then alternatives. Include timeframe for each ("this week", "by Friday", "before their renewal in June").
+5. WHAT TO WATCH: What signals would change this recommendation? "If they don't respond by Friday, escalate to a call. If the renewal passes without engagement, shift to retention mode."
+
+TIME-HORIZON AWARENESS — layer your advice across these when relevant:
+- This week: What's urgent and calendar-driven? What meetings need prep?
+- This month: What commitments are due? What renewals are approaching? Who's going cold?
+- This quarter: Revenue pace vs target. Pipeline health. Strategic client moves.
+- This year: Book of business growth trajectory. Client portfolio balance. Relationship depth evolution.
 
 When creating or discussing engagements, use create_engagement to track deals.
 When Josh reports a closed deal or pipeline update, use create_engagement or update_engagement AND update_business_context to keep the living system current.
+When you work through a strategic plan or important analysis with Josh, offer to save it using create_strategic_note so it persists beyond chat history. This is especially valuable for quarterly plans, client strategies, and business development approaches.
 
 CRITICAL RULES:
 - You have the data. USE IT. When Josh asks "How are things going at MMG?" — you have MMG's transcripts, commitments, contacts, health metrics, and session notes RIGHT HERE in your context. Synthesize and answer directly.
@@ -2146,9 +2312,9 @@ CRITICAL RULES:
 - When Josh asks you to change/edit something, use the appropriate update action
 - Keep responses focused but thorough — give Josh the full picture with specific details from the data`;
 
-    // Build messages for Claude (limit history to last 10 to stay within token limits)
+    // Build messages for Claude (limit history to last 20 for strategic planning conversations)
     const claudeMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-    const trimmedHistory = history.slice(-10);
+    const trimmedHistory = history.slice(-20);
     for (const msg of trimmedHistory) {
       if (!msg.content || !msg.role) continue;
       // Ensure alternating roles — skip if same role as previous
@@ -2177,7 +2343,7 @@ CRITICAL RULES:
     try {
       response = await client.messages.create({
         model: AI_MODEL,
-        max_tokens: 4096,
+        max_tokens: 8192,
         system: systemPrompt,
         messages: claudeMessages,
       });
