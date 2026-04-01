@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target, User, Mail, DollarSign, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Zap, Inbox, Users, FileText, Settings, MessageSquare, PhoneForwarded, Search, Target, User, Mail, DollarSign, ChevronDown, ChevronRight, Briefcase } from 'lucide-react';
 import Link from 'next/link';
 import { useCommitments } from '@/lib/hooks/use-commitments';
 import { useOrganizations } from '@/lib/hooks/use-organizations';
@@ -79,6 +79,15 @@ export default function FocusView() {
 
     return { overdue, dueToday, thisWeek, waitingOn: waitingOn.length };
   }, [commitments, waitingOn]);
+
+  // Internal (LeadShift) stats
+  const internalStats = useMemo(() => {
+    const now = new Date();
+    const internal = commitments.filter((c) => c.category === 'internal');
+    const overdue = internal.filter((c) => c.due_date && new Date(c.due_date) < now && !isToday(new Date(c.due_date))).length;
+    const dueToday = internal.filter((c) => c.due_date && isToday(new Date(c.due_date))).length;
+    return { total: internal.length, overdue, dueToday };
+  }, [commitments]);
 
   const [trends, setTrends] = useState<{ overdue: number[]; dueToday: number[]; completed: number[]; waiting: number[] } | null>(null);
   const [emailQueue, setEmailQueue] = useState<{ unprocessed: number; total: number; processingRate: number } | null>(null);
@@ -223,6 +232,22 @@ export default function FocusView() {
 
           {/* 2. Life Pulse — personal goals, fitness, personal items */}
           <LifePulse />
+
+          {/* 2b. Internal Pulse */}
+          {internalStats.total > 0 && (
+            <Link href="/commitments?category=internal" className="bg-card rounded-xl border border-violet-500/20 p-3 block hover:border-violet-500/40 transition-all">
+              <div className="flex items-center gap-2 mb-1">
+                <Briefcase className="w-3.5 h-3.5 text-violet-400" />
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-400">Internal</span>
+              </div>
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-foreground font-medium">{internalStats.total} active</span>
+                {internalStats.overdue > 0 && <span className="text-danger">{internalStats.overdue} overdue</span>}
+                {internalStats.dueToday > 0 && <span className="text-warning">{internalStats.dueToday} due today</span>}
+                {internalStats.overdue === 0 && internalStats.dueToday === 0 && <span className="text-muted">on track</span>}
+              </div>
+            </Link>
+          )}
 
           {/* 3. Proactive Intel */}
           <ProactiveNudges />
@@ -396,6 +421,24 @@ export default function FocusView() {
             <div className="bg-card rounded-xl border border-border p-4">
               <FollowUpWidget />
             </div>
+
+            {/* Internal Pulse */}
+            {internalStats.total > 0 && (
+              <Link href="/commitments?category=internal" className="bg-card rounded-xl border border-violet-500/20 p-3 block hover:border-violet-500/40 transition-all">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <Briefcase className="w-3.5 h-3.5 text-violet-400" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-400">Internal</span>
+                  </div>
+                  <span className="text-sm font-bold text-foreground">{internalStats.total}<span className="text-muted font-normal text-xs"> active</span></span>
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  {internalStats.overdue > 0 && <span className="text-danger font-medium">{internalStats.overdue} overdue</span>}
+                  {internalStats.dueToday > 0 && <span className="text-warning font-medium">{internalStats.dueToday} due today</span>}
+                  {internalStats.overdue === 0 && internalStats.dueToday === 0 && <span className="text-success">on track</span>}
+                </div>
+              </Link>
+            )}
 
             {/* Pipeline Snapshot */}
             {pipelineSnapshot && (

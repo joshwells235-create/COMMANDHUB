@@ -104,7 +104,8 @@ export async function GET(request: Request) {
     const { data: activeOrgs } = await supabase
       .from('organizations')
       .select('id, name, strategic_value')
-      .in('status', ['active', 'prospect']);
+      .in('status', ['active', 'prospect'])
+      .eq('is_own_business', false);
 
     const darkClients: Array<{ org_id: string; name: string; strategic_value: string; days_since_contact: number }> = [];
 

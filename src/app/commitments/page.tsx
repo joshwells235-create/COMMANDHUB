@@ -33,6 +33,13 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'note_to_self', label: 'Note to Self' },
 ];
 
+const CATEGORY_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'All Contexts' },
+  { value: 'client', label: 'Client' },
+  { value: 'internal', label: 'Internal' },
+  { value: 'personal', label: 'Personal' },
+];
+
 const VIEW_LABELS: Record<string, string> = {
   overdue: 'Overdue',
   today: 'Due Today',
@@ -49,6 +56,7 @@ function CommitmentsPageContent() {
     if (viewParam === 'waiting') return 'waiting';
     return 'pending,in_progress';
   });
+  const [categoryFilter, setCategoryFilter] = useState(() => searchParams.get('category') || '');
   const [typeFilter, setTypeFilter] = useState('');
   const [orgFilter, setOrgFilter] = useState('');
   const [ownerFilter, setOwnerFilter] = useState(() => {
@@ -68,6 +76,7 @@ function CommitmentsPageContent() {
     status: statusFilter,
     org_id: orgFilter || undefined,
     owner: ownerFilter || undefined,
+    category: categoryFilter || undefined,
     limit: 200,
   });
 
@@ -156,6 +165,15 @@ function CommitmentsPageContent() {
             className="bg-card border border-border rounded-lg px-2.5 py-1.5 text-sm"
           >
             {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="bg-card border border-border rounded-lg px-2.5 py-1.5 text-sm"
+          >
+            {CATEGORY_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>

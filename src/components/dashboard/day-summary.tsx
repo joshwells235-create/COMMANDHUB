@@ -49,12 +49,19 @@ export function DaySummary({ commitments, waitingOn, events, needsReplyCount, co
       href: '/commitments?view=overdue',
     });
   }
-  if (internalOverdue > 0 || personalOverdue > 0) {
-    const extras = [
-      internalOverdue > 0 ? `${internalOverdue} internal` : '',
-      personalOverdue > 0 ? `${personalOverdue} personal` : '',
-    ].filter(Boolean).join(', ');
-    parts.push({ text: extras, color: 'text-muted' });
+  if (internalOverdue > 0) {
+    parts.push({
+      text: `${internalOverdue} internal overdue`,
+      color: 'text-violet-400',
+      href: '/commitments?view=overdue&category=internal',
+    });
+  }
+  if (personalOverdue > 0) {
+    parts.push({
+      text: `${personalOverdue} personal overdue`,
+      color: 'text-emerald-400',
+      href: '/commitments?view=overdue&category=personal',
+    });
   }
 
   if (dueToday.length > 0) {

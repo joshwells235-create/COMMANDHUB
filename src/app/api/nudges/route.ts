@@ -3,9 +3,9 @@ import { createServerClient } from '@/lib/supabase/server';
 
 interface Nudge {
   id: string;
-  type: 'meeting_prep' | 'going_cold' | 'unreplied_emails' | 'overdue_promise' | 'stale_waiting' | 'renewal_approaching' | 'habit_reminder' | 'personal_due';
+  type: 'meeting_prep' | 'going_cold' | 'unreplied_emails' | 'overdue_promise' | 'stale_waiting' | 'internal_overdue' | 'renewal_approaching' | 'habit_reminder' | 'personal_due';
   score: number;
-  icon: 'calendar' | 'users' | 'mail' | 'alert-triangle' | 'clock' | 'heart' | 'target';
+  icon: 'calendar' | 'users' | 'mail' | 'alert-triangle' | 'clock' | 'heart' | 'target' | 'briefcase';
   title: string;
   subtitle: string;
   action_type: 'navigate' | 'complete' | 'draft';
@@ -319,6 +319,38 @@ export async function GET(_request: NextRequest) {
         });
       }
     }
+
+    // --- 5b. Internal Overdue: internal commitments past due ---
+    try {
+      const { data: internalOverdue } = await supabase
+        .from('commitments')
+        .select('id, title, due_date')
+        .eq('category', 'internal')
+        .in('status', ['pending', 'in_progress'])
+        .lt('due_date', now.toISOString())
+        .not('due_date', 'is', null);
+
+      const internalOverdueCount = internalOverdue?.length || 0;
+      if (internalOverdueCount >= 2) {
+        const oldestDue = internalOverdue!.sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())[0];
+        const daysOverdue = daysBetween(new Date(oldestDue.due_date!), now);
+        const score = Math.min(40 + internalOverdueCount * 10, 80);
+
+        nudges.push({
+          id: 'internal_overdue',
+          type: 'internal_overdue',
+          score,
+          icon: 'briefcase',
+          title: `${internalOverdueCount} internal items overdue — team tasks can slip quietly`,
+          subtitle: `Oldest: '${oldestDue.title}' (${daysOverdue} days overdue)`,
+          action_type: 'navigate',
+          action_url: '/commitments?category=internal&view=overdue',
+          org_id: null,
+          commitment_id: null,
+          urgency: urgencyFromScore(score),
+        });
+      }
+    } catch { /* internal nudges non-critical */ }
 
     // --- 6. Renewal Approaching: engagements with end_date within 30 days ---
     const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);

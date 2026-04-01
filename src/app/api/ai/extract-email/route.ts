@@ -167,7 +167,10 @@ Do NOT create commitments for:
 - Information-only items ("FYI: the report is attached")
 - Trivial or low-stakes items that don't need tracking
 
-When in doubt, SKIP IT. Fewer high-quality commitments are far better than many low-quality ones. Aim for 0-3 commitments per email, not 5+.
+When in doubt, SKIP IT. Fewer high-quality commitments are far better than many low-quality ones.
+- Aim for 0-2 commitments per email. Most emails produce ZERO commitments.
+- If this email is part of a thread and the action was already captured in an earlier message, do NOT create a duplicate. The existing commitment covers it.
+- Status updates, progress reports, and informational replies almost never need new commitments.
 ${isSent ? `
 RESOLVED COMMITMENTS — compare this email against the PENDING COMMITMENTS list above. If Josh's sent email appears to fulfill or address any pending commitment, list the commitment IDs that should be marked complete or in-progress.` : `
 RESOLVED WAITING_ON ITEMS — compare this received email against the WAITING_ON COMMITMENTS list above. If the sender is delivering on something Josh was waiting for (e.g. they sent a document Josh requested, they confirmed something Josh was waiting on, they completed a task), list those commitment IDs as resolved. Only mark as resolved if the email clearly shows the item was delivered or completed — not just acknowledged.`}

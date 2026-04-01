@@ -23,23 +23,31 @@ export async function GET() {
     const quarterLabel = `${now.getFullYear()} Q${Math.floor(currentMonth / 3) + 1}`;
 
     // Revenue closed this quarter (completed engagements with start_date in this quarter)
-    const { data: closedThisQuarter } = await supabase
+    const { data: closedThisQuarterRaw } = await supabase
       .from('engagements')
-      .select('value_amount')
+      .select('value_amount, organizations(is_own_business)')
       .eq('status', 'completed')
       .gte('start_date', quarterStart.toISOString())
       .lte('start_date', quarterEnd.toISOString());
 
-    const closedRevenue = (closedThisQuarter || []).reduce(
-      (sum, e) => sum + (Number(e.value_amount) || 0), 0
-    );
+    const closedRevenue = (closedThisQuarterRaw || [])
+      .filter(e => {
+        const org = e.organizations as unknown as { is_own_business?: boolean } | null;
+        return !org?.is_own_business;
+      })
+      .reduce((sum, e) => sum + (Number(e.value_amount) || 0), 0);
 
     // Open pipeline (pending engagements)
-    const { data: pipeline } = await supabase
+    const { data: pipelineRaw } = await supabase
       .from('engagements')
-      .select('id, name, type, status, value_amount, end_date, org_id, organizations(name)')
+      .select('id, name, type, status, value_amount, end_date, org_id, organizations(name, is_own_business)')
       .eq('status', 'pending')
       .order('end_date', { ascending: true });
+
+    const pipeline = (pipelineRaw || []).filter(e => {
+      const org = e.organizations as unknown as { name: string; is_own_business?: boolean } | null;
+      return !org?.is_own_business;
+    });
 
     const totalPipeline = (pipeline || []).reduce(
       (sum, e) => sum + (Number(e.value_amount) || 0), 0

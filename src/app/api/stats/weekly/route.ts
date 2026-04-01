@@ -47,13 +47,13 @@ export async function GET() {
 
     const { data: recentTranscripts } = await supabase
       .from('transcripts')
-      .select('org_id, organizations(name)')
+      .select('org_id, organizations(name, is_own_business)')
       .gte('transcript_date', thisWeekStart.toISOString())
       .not('org_id', 'is', null);
 
     const { data: recentCommitments } = await supabase
       .from('commitments')
-      .select('org_id, organizations(name)')
+      .select('org_id, organizations(name, is_own_business)')
       .gte('created_at', thisWeekStart.toISOString())
       .not('org_id', 'is', null);
 
@@ -61,14 +61,16 @@ export async function GET() {
     const clientTouches: Record<string, { name: string; count: number }> = {};
     for (const t of recentTranscripts || []) {
       if (!t.org_id) continue;
-      const name = (t.organizations as unknown as { name: string } | null)?.name || 'Unknown';
-      if (!clientTouches[t.org_id]) clientTouches[t.org_id] = { name, count: 0 };
+      const org = t.organizations as unknown as { name: string; is_own_business?: boolean } | null;
+      if (!org || org.is_own_business) continue;
+      if (!clientTouches[t.org_id]) clientTouches[t.org_id] = { name: org.name, count: 0 };
       clientTouches[t.org_id].count += 2; // sessions count double
     }
     for (const c of recentCommitments || []) {
       if (!c.org_id) continue;
-      const name = (c.organizations as unknown as { name: string } | null)?.name || 'Unknown';
-      if (!clientTouches[c.org_id]) clientTouches[c.org_id] = { name, count: 0 };
+      const org = c.organizations as unknown as { name: string; is_own_business?: boolean } | null;
+      if (!org || org.is_own_business) continue;
+      if (!clientTouches[c.org_id]) clientTouches[c.org_id] = { name: org.name, count: 0 };
       clientTouches[c.org_id].count += 1;
     }
 

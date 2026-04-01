@@ -8,6 +8,7 @@ interface UseCommitmentsOptions {
   status?: string;
   org_id?: string;
   owner?: string;
+  category?: string;
   limit?: number;
 }
 
@@ -22,6 +23,7 @@ export function useCommitments(options: UseCommitmentsOptions = {}) {
       if (options.status) params.set('status', options.status);
       if (options.org_id) params.set('org_id', options.org_id);
       if (options.owner) params.set('owner', options.owner);
+      if (options.category) params.set('category', options.category);
       if (options.limit) params.set('limit', String(options.limit));
 
       const res = await fetch(`/api/commitments?${params}`);
@@ -34,7 +36,7 @@ export function useCommitments(options: UseCommitmentsOptions = {}) {
     } finally {
       setLoading(false);
     }
-  }, [options.status, options.org_id, options.owner, options.limit]);
+  }, [options.status, options.org_id, options.owner, options.category, options.limit]);
 
   useEffect(() => {
     fetchCommitments();
