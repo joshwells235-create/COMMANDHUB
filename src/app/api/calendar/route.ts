@@ -41,13 +41,19 @@ export async function GET(request: NextRequest) {
 
     const { data: events, error } = await query;
 
-    // Filter out personal events (Sleep, Deep Work, etc.) unless explicitly requested
-    const filtered = excludePersonal
-      ? (events || []).filter((e) => {
-          const eventType = (e.ai_analysis as Record<string, unknown> | null)?.event_type;
-          return eventType !== 'personal';
-        })
-      : events || [];
+    // Filter out personal events and cancelled events
+    const filtered = (events || []).filter((e) => {
+      // Always filter cancelled events
+      const rawData = e.raw_data as Record<string, unknown> | null;
+      if (rawData?.isCancelled === true) return false;
+      if (e.subject?.startsWith('Canceled:') || e.subject?.startsWith('Cancelled:')) return false;
+      // Filter personal events unless explicitly requested
+      if (excludePersonal) {
+        const eventType = (e.ai_analysis as Record<string, unknown> | null)?.event_type;
+        if (eventType === 'personal') return false;
+      }
+      return true;
+    });
 
     if (error) throw error;
 
