@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     const { data: themeTranscripts, error: themeTranscriptsError } = await supabase
       .from('transcripts')
       .select(
-        'id, title, transcript_date, key_themes, client_insights, org_id, organizations(id, name)'
+        'id, title, transcript_date, key_themes, client_insights, org_id, organizations(id, name, is_own_business)'
       )
       .eq('is_processed', true)
       .gte('transcript_date', thirtyDaysAgo.toISOString().split('T')[0])
@@ -64,9 +64,10 @@ export async function GET(request: Request) {
       >();
 
       for (const t of themeTranscripts) {
-        const org = t.organizations as unknown as { id: string; name: string } | null;
+        const org = t.organizations as unknown as { id: string; name: string; is_own_business?: boolean } | null;
         const orgId = t.org_id;
         if (!orgId || !org) continue;
+        if (org.is_own_business) continue;
 
         if (!orgMap.has(orgId)) {
           orgMap.set(orgId, { org, themes: [], insights: [] });
@@ -199,7 +200,7 @@ Only include themes that genuinely appear across 3+ different clients. If fewer 
     const { data: transcripts, error: transcriptsError } = await supabase
       .from('transcripts')
       .select(
-        'id, title, transcript_date, transcript_type, summary, key_themes, client_insights, session_arc, ai_extraction, org_id, organizations(id, name, industry, status, strategic_value)'
+        'id, title, transcript_date, transcript_type, summary, key_themes, client_insights, session_arc, ai_extraction, org_id, organizations(id, name, industry, status, strategic_value, is_own_business)'
       )
       .eq('is_processed', true)
       .not('ai_extraction', 'is', null)
@@ -231,9 +232,11 @@ Only include themes that genuinely appear across 3+ different clients. If fewer 
           industry: string | null;
           status: string | null;
           strategic_value: string | null;
+          is_own_business?: boolean;
         } | null;
         const orgId = t.org_id;
         if (!orgId || !org) continue;
+        if (org.is_own_business) continue;
 
         if (!orgMap.has(orgId)) {
           orgMap.set(orgId, { org, sessions: [] });
@@ -420,7 +423,8 @@ Analyze patterns across ALL clients and return JSON only (no markdown, no code b
     const { data: orgsWithTranscripts } = await supabase
       .from('organizations')
       .select('id, name, intelligence')
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .eq('is_own_business', false);
 
     for (const org of orgsWithTranscripts || []) {
       // Check if already analyzed recently

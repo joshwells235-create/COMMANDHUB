@@ -44,7 +44,7 @@ export async function POST() {
     const { data: transcripts, error: transcriptsError } = await supabase
       .from('transcripts')
       .select(
-        'id, title, transcript_date, transcript_type, summary, key_themes, client_insights, session_arc, ai_extraction, org_id, organizations(id, name, industry, status, strategic_value)'
+        'id, title, transcript_date, transcript_type, summary, key_themes, client_insights, session_arc, ai_extraction, org_id, organizations(id, name, industry, status, strategic_value, is_own_business)'
       )
       .eq('is_processed', true)
       .not('ai_extraction', 'is', null)
@@ -75,9 +75,10 @@ export async function POST() {
     >();
 
     for (const t of transcripts) {
-      const org = t.organizations as unknown as { id: string; name: string; industry: string | null; status: string | null; strategic_value: string | null } | null;
+      const org = t.organizations as unknown as { id: string; name: string; industry: string | null; status: string | null; strategic_value: string | null; is_own_business?: boolean } | null;
       const orgId = t.org_id;
       if (!orgId || !org) continue;
+      if (org.is_own_business) continue;
 
       if (!orgMap.has(orgId)) {
         orgMap.set(orgId, { org, sessions: [] });

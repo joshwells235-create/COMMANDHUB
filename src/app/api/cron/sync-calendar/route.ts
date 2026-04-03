@@ -3,7 +3,7 @@ import { syncCalendar } from '@/lib/microsoft-graph';
 import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
-import { isSimilarCommitment } from '@/lib/dedup-commitment';
+import { dedupAndCreateCommitment } from '@/lib/create-commitment';
 import { matchOrgByName, matchOrgByContacts, matchOrgBySubject } from '@/lib/match-org';
 
 export const runtime = 'nodejs';
@@ -173,26 +173,12 @@ Return JSON only:
             // Auto-create prep commitments — only for business event types, with dedup
             const BUSINESS_EVENT_TYPES = ['coaching_session', 'workshop', 'pi_session', 'client_meeting', 'internal_leadshift', 'vistage'];
             if (analysis.implied_commitments?.length > 0 && BUSINESS_EVENT_TYPES.includes(analysis.event_type)) {
-              // Fetch existing commitments for dedup
-              const dedupQuery = supabase
-                .from('commitments')
-                .select('id, title')
-                .in('status', ['pending', 'in_progress', 'waiting'])
-                .limit(100);
-              if (matchedOrgId) dedupQuery.eq('org_id', matchedOrgId);
-              const { data: existingCommitments } = await dedupQuery;
-
               for (const commitment of analysis.implied_commitments) {
                 if (commitment.timing === 'before') {
-                  // Check for duplicate
-                  const newTitle = (commitment.title || '').toLowerCase().trim();
-                  const isDuplicate = (existingCommitments || []).some((d) => isSimilarCommitment(d.title, commitment.title));
-                  if (isDuplicate) continue;
-
                   const prepDue = commitment.suggested_due
                     || new Date(new Date(event.start_time).getTime() - 24 * 60 * 60 * 1000).toISOString();
 
-                  await supabase.from('commitments').insert({
+                  await dedupAndCreateCommitment(supabase, {
                     title: commitment.title,
                     description: commitment.description,
                     commitment_type: commitment.commitment_type || 'prep',
@@ -201,8 +187,6 @@ Return JSON only:
                     source_type: 'calendar',
                     source_ref: event.id,
                     owner: 'josh',
-                    status: 'pending',
-                    priority_score: 50,
                   });
                 }
               }

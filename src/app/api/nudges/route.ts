@@ -3,9 +3,9 @@ import { createServerClient } from '@/lib/supabase/server';
 
 interface Nudge {
   id: string;
-  type: 'meeting_prep' | 'going_cold' | 'unreplied_emails' | 'overdue_promise' | 'stale_waiting' | 'renewal_approaching' | 'habit_reminder' | 'personal_due';
+  type: 'meeting_prep' | 'going_cold' | 'unreplied_emails' | 'overdue_promise' | 'stale_waiting' | 'internal_overdue' | 'renewal_approaching' | 'habit_reminder' | 'personal_due';
   score: number;
-  icon: 'calendar' | 'users' | 'mail' | 'alert-triangle' | 'clock' | 'heart' | 'target';
+  icon: 'calendar' | 'users' | 'mail' | 'alert-triangle' | 'clock' | 'heart' | 'target' | 'briefcase';
   title: string;
   subtitle: string;
   action_type: 'navigate' | 'complete' | 'draft';
@@ -36,30 +36,35 @@ export async function GET(_request: NextRequest) {
 
     const { data: rawUpcomingEvents } = await supabase
       .from('calendar_events')
-      .select('id, subject, start_time, org_id, ai_analysis')
+      .select('id, subject, start_time, org_id, ai_analysis, raw_data')
       .not('org_id', 'is', null)
       .gte('start_time', now.toISOString())
       .lte('start_time', in48h.toISOString())
       .order('start_time', { ascending: true });
 
-    // Filter out personal events (Sleep, Deep Work, etc.)
+    // Filter out personal events and cancelled events
     const upcomingEvents = (rawUpcomingEvents || []).filter((e) => {
       const analysis = e.ai_analysis as Record<string, unknown> | null;
-      return analysis?.event_type !== 'personal';
+      if (analysis?.event_type === 'personal') return false;
+      // Filter cancelled events (MS Graph isCancelled or subject prefix)
+      const rawData = e.raw_data as Record<string, unknown> | null;
+      if (rawData?.isCancelled === true) return false;
+      if (e.subject?.startsWith('Canceled:') || e.subject?.startsWith('Cancelled:')) return false;
+      return true;
     });
 
     if (upcomingEvents && upcomingEvents.length > 0) {
       // Gather unique org IDs from events
       const eventOrgIds = [...new Set(upcomingEvents.map(e => e.org_id).filter(Boolean))] as string[];
 
-      // Fetch org names and filter out own-business
+      // Fetch ALL orgs (including own-business) so we get names for internal meetings too
       const { data: eventOrgs } = await supabase
         .from('organizations')
         .select('id, name, is_own_business')
-        .in('id', eventOrgIds)
-        .eq('is_own_business', false);
+        .in('id', eventOrgIds);
 
       const orgNameMap = new Map((eventOrgs || []).map(o => [o.id, o.name]));
+      const ownBizOrgIds = new Set((eventOrgs || []).filter(o => o.is_own_business).map(o => o.id));
 
       // Fetch overdue commitment counts per org
       const { data: overdueCommitments } = await supabase
@@ -90,13 +95,14 @@ export async function GET(_request: NextRequest) {
         }
       }
 
-      // Deduplicate by org_id (take earliest event per org)
+      // Deduplicate by org_id (take earliest event per org), skip internal meetings
       const seenOrgs = new Set<string>();
       for (const event of upcomingEvents) {
         if (!event.org_id || seenOrgs.has(event.org_id)) continue;
+        if (ownBizOrgIds.has(event.org_id)) continue; // Skip internal meetings for prep nudges
         seenOrgs.add(event.org_id);
 
-        const orgName = orgNameMap.get(event.org_id) || 'Unknown';
+        const orgName = orgNameMap.get(event.org_id) || event.subject || 'Meeting';
         const overdueCount = overdueByOrg.get(event.org_id) || 0;
         const pendingCount = pendingByOrg.get(event.org_id) || 0;
 
@@ -213,47 +219,83 @@ export async function GET(_request: NextRequest) {
       }
     }
 
-    // --- 3. Unreplied Emails ---
-    const { data: unrepliedEmails } = await supabase
-      .from('emails')
-      .select('id, subject, sender, ai_extraction')
-      .eq('folder', 'inbox')
-      .eq('is_processed', true);
+    // --- 3. Unreplied Emails (using same logic as /api/emails/needs-reply) ---
+    try {
+      const { data: inboxEmails } = await supabase
+        .from('emails')
+        .select('id, subject, sender, ai_extraction, conversation_id, received_at, org_id, review_status, folder')
+        .eq('is_processed', true)
+        .not('review_status', 'in', '("dismissed","accepted","reviewed")')
+        .neq('folder', 'sent');
 
-    if (unrepliedEmails && unrepliedEmails.length > 0) {
-      let countToday = 0;
-      let countThisWeek = 0;
+      if (inboxEmails && inboxEmails.length > 0) {
+        // Filter: needs_reply=true, not from Josh, not internal
+        const joshPatterns = ['josh wells', 'josh@leadshiftinc.com', 'jwells'];
+        const ownBizIds = new Set(
+          (await supabase.from('organizations').select('id').eq('is_own_business', true)).data?.map(o => o.id) || []
+        );
 
-      for (const email of unrepliedEmails) {
-        const extraction = email.ai_extraction as Record<string, unknown> | null;
-        if (!extraction) continue;
-        if (String(extraction.needs_reply) !== 'true' && extraction.needs_reply !== true) continue;
-
-        const urgency = String(extraction.reply_urgency || '');
-        if (urgency === 'today') countToday++;
-        else if (urgency === 'this_week') countThisWeek++;
-      }
-
-      const totalNeedReply = countToday + countThisWeek;
-      if (totalNeedReply > 0) {
-        const score = countToday > 0 ? 75 : 50;
-        const urgentPart = countToday > 0 ? ` \u2014 ${countToday} urgent` : '';
-
-        nudges.push({
-          id: 'unreplied_emails',
-          type: 'unreplied_emails',
-          score,
-          icon: 'mail',
-          title: `${totalNeedReply} emails need replies${urgentPart}`,
-          subtitle: countThisWeek > 0 ? `${countThisWeek} more due this week` : 'All flagged as urgent',
-          action_type: 'navigate',
-          action_url: '/review',
-          org_id: null,
-          commitment_id: null,
-          urgency: urgencyFromScore(score),
+        const candidateEmails = inboxEmails.filter((email) => {
+          const extraction = email.ai_extraction as Record<string, unknown> | null;
+          if (!extraction || extraction.needs_reply !== true) return false;
+          const sender = (email.sender || '').toLowerCase();
+          if (joshPatterns.some(p => sender.includes(p))) return false;
+          if (email.org_id && ownBizIds.has(email.org_id)) return false;
+          return true;
         });
+
+        // Check if Josh already replied in each conversation thread
+        const convIds = [...new Set(candidateEmails.map(e => e.conversation_id).filter(Boolean) as string[])];
+        const latestReplyByConv = new Map<string, Date>();
+        if (convIds.length > 0) {
+          const { data: replies } = await supabase
+            .from('emails')
+            .select('conversation_id, received_at')
+            .in('conversation_id', convIds)
+            .or('folder.eq.sent,sender.ilike.%Josh Wells%');
+          for (const r of replies || []) {
+            if (!r.conversation_id) continue;
+            const d = new Date(r.received_at);
+            const existing = latestReplyByConv.get(r.conversation_id);
+            if (!existing || d > existing) latestReplyByConv.set(r.conversation_id, d);
+          }
+        }
+
+        let countToday = 0;
+        let countThisWeek = 0;
+        for (const email of candidateEmails) {
+          // Skip if Josh already replied after this email
+          if (email.conversation_id) {
+            const latestReply = latestReplyByConv.get(email.conversation_id);
+            if (latestReply && new Date(email.received_at) <= latestReply) continue;
+          }
+          const extraction = email.ai_extraction as Record<string, unknown>;
+          const urgency = String(extraction.reply_urgency || '');
+          if (urgency === 'today') countToday++;
+          else if (urgency === 'this_week') countThisWeek++;
+        }
+
+        const totalNeedReply = countToday + countThisWeek;
+        if (totalNeedReply > 0) {
+          const score = countToday > 0 ? 75 : 50;
+          const urgentPart = countToday > 0 ? ` \u2014 ${countToday} urgent` : '';
+
+          nudges.push({
+            id: 'unreplied_emails',
+            type: 'unreplied_emails',
+            score,
+            icon: 'mail',
+            title: `${totalNeedReply} emails need replies${urgentPart}`,
+            subtitle: countThisWeek > 0 ? `${countThisWeek} more due this week` : 'All flagged as urgent',
+            action_type: 'navigate',
+            action_url: '/review',
+            org_id: null,
+            commitment_id: null,
+            urgency: urgencyFromScore(score),
+          });
+        }
       }
-    }
+    } catch { /* email nudge non-critical */ }
 
     // --- 4. Overdue Promise: promise_made commitments past due ---
     const { data: overduePromises } = await supabase
@@ -319,6 +361,38 @@ export async function GET(_request: NextRequest) {
         });
       }
     }
+
+    // --- 5b. Internal Overdue: internal commitments past due ---
+    try {
+      const { data: internalOverdue } = await supabase
+        .from('commitments')
+        .select('id, title, due_date')
+        .eq('category', 'internal')
+        .in('status', ['pending', 'in_progress'])
+        .lt('due_date', now.toISOString())
+        .not('due_date', 'is', null);
+
+      const internalOverdueCount = internalOverdue?.length || 0;
+      if (internalOverdueCount >= 2) {
+        const oldestDue = internalOverdue!.sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())[0];
+        const daysOverdue = daysBetween(new Date(oldestDue.due_date!), now);
+        const score = Math.min(40 + internalOverdueCount * 10, 80);
+
+        nudges.push({
+          id: 'internal_overdue',
+          type: 'internal_overdue',
+          score,
+          icon: 'briefcase',
+          title: `${internalOverdueCount} internal items overdue — team tasks can slip quietly`,
+          subtitle: `Oldest: '${oldestDue.title}' (${daysOverdue} days overdue)`,
+          action_type: 'navigate',
+          action_url: '/commitments?category=internal&view=overdue',
+          org_id: null,
+          commitment_id: null,
+          urgency: urgencyFromScore(score),
+        });
+      }
+    } catch { /* internal nudges non-critical */ }
 
     // --- 6. Renewal Approaching: engagements with end_date within 30 days ---
     const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);

@@ -269,7 +269,8 @@ export async function GET() {
     const { data: orgs, error: orgsError } = await supabase
       .from('organizations')
       .select('id, name')
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .eq('is_own_business', false);
 
     if (orgsError) {
       return NextResponse.json({ error: orgsError.message }, { status: 500 });

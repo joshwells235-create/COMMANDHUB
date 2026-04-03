@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { dedupAndCreateCommitment } from '@/lib/create-commitment';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
 
@@ -143,14 +144,14 @@ Return JSON only:
       })
       .eq('id', event_id);
 
-    // Auto-create prep commitments for before-event items
+    // Auto-create prep commitments for before-event items (with dedup)
     if (analysis.implied_commitments?.length > 0) {
       for (const commitment of analysis.implied_commitments) {
         if (commitment.timing === 'before') {
           const prepDue = commitment.suggested_due
             || new Date(new Date(event.start_time).getTime() - 24 * 60 * 60 * 1000).toISOString();
 
-          await supabase.from('commitments').insert({
+          await dedupAndCreateCommitment(supabase, {
             title: commitment.title,
             description: commitment.description,
             commitment_type: commitment.commitment_type || 'prep',

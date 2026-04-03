@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { AI_MODEL } from '@/lib/ai';
 import { matchOrgByName, matchOrgByContacts } from '@/lib/match-org';
-import { isSimilarCommitment } from '@/lib/dedup-commitment';
+import { dedupAndCreateCommitment } from '@/lib/create-commitment';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -167,7 +167,10 @@ Do NOT create commitments for:
 - Information-only items ("FYI: the report is attached")
 - Trivial or low-stakes items that don't need tracking
 
-When in doubt, SKIP IT. Fewer high-quality commitments are far better than many low-quality ones. Aim for 0-3 commitments per email, not 5+.
+When in doubt, SKIP IT. Fewer high-quality commitments are far better than many low-quality ones.
+- Aim for 0-2 commitments per email. Most emails produce ZERO commitments.
+- If this email is part of a thread and the action was already captured in an earlier message, do NOT create a duplicate. The existing commitment covers it.
+- Status updates, progress reports, and informational replies almost never need new commitments.
 ${isSent ? `
 RESOLVED COMMITMENTS — compare this email against the PENDING COMMITMENTS list above. If Josh's sent email appears to fulfill or address any pending commitment, list the commitment IDs that should be marked complete or in-progress.` : `
 RESOLVED WAITING_ON ITEMS — compare this received email against the WAITING_ON COMMITMENTS list above. If the sender is delivering on something Josh was waiting for (e.g. they sent a document Josh requested, they confirmed something Josh was waiting on, they completed a task), list those commitment IDs as resolved. Only mark as resolved if the email clearly shows the item was delivered or completed — not just acknowledged.`}
@@ -443,29 +446,13 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
         if (matchedContact) contactId = matchedContact.id;
       }
 
-      // Deduplication: check for existing active commitment with similar title for same org
-      const dedupTitle = commitment.title.toLowerCase().trim();
-      let dedupQuery = supabase
-        .from('commitments')
-        .select('id, title')
-        .in('status', ['pending', 'in_progress', 'waiting']);
-
-      if (matchedOrgId) {
-        dedupQuery = dedupQuery.eq('org_id', matchedOrgId);
-      }
-
-      const { data: duplicates } = await dedupQuery;
-
-      const isDuplicate = duplicates?.some((d) => isSimilarCommitment(d.title, commitment.title));
-
-      if (isDuplicate) continue;
-
       // Derive commitment category from email classification
       const commitCategory = extraction.email_category === 'internal' ? 'internal'
         : extraction.email_category === 'personal' ? 'personal'
         : 'client';
 
-      await supabase.from('commitments').insert({
+      // Dedup + create via shared utility
+      await dedupAndCreateCommitment(supabase, {
         title: commitment.title,
         description: commitment.description,
         commitment_type: commitment.commitment_type,
@@ -473,12 +460,10 @@ Be thorough but avoid fabricating intelligence that isn't supported by the email
         owner: commitment.owner || 'josh',
         other_party: commitment.other_party,
         due_date: commitment.suggested_due || null,
-        status: commitment.owner === 'other' ? 'waiting' : 'pending',
         org_id: matchedOrgId,
         contact_id: contactId,
-        source: 'email',
+        source_type: 'email',
         source_ref: `email:${email.id}`,
-        priority_score: 50,
       });
     }
   }

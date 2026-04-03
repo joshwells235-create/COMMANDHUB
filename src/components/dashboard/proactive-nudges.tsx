@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Brain,
+  Briefcase,
   Calendar,
   Users,
   Mail,
@@ -37,6 +38,7 @@ const iconMap: Record<string, React.ElementType> = {
   clock: Clock,
   heart: Heart,
   target: Target,
+  briefcase: Briefcase,
 };
 
 const urgencyConfig = {
